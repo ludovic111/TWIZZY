@@ -1,179 +1,181 @@
 # TWIZZY Self-Improvement Summary
 
-This document summarizes the improvements made to TWIZZY on 2025-01-30.
+This document summarizes improvements made to TWIZZY.
 
-## New Modules Added
+## Improvements Made on 2025-01-30
 
-### 1. `src/core/logging_config.py`
-**Purpose**: Centralized, structured logging system
-
-**Features**:
-- Structured log formatting with context fields
-- Log rotation (10MB per file, 5 backups)
-- Separate error log file
-- Context-aware logging for debugging
-
-**Benefits**:
-- Better observability of agent behavior
-- Easier debugging with structured logs
-- Automatic log management
-
-### 2. `src/core/conversation_store.py`
-**Purpose**: Persistent conversation storage and retrieval
+### 1. **Rate Limiting System** (`src/core/rate_limiter.py`)
+**Purpose**: Prevent hitting API rate limits and manage resource consumption
 
 **Features**:
-- Save/load conversations to JSON files
-- Conversation listing and search
-- Metadata support
-- Automatic conversation ID generation
+- Token bucket rate limiter for API calls
+- Adaptive rate limiting based on API responses
+- Concurrent request limiting with semaphores
+- Statistics tracking for monitoring
 
 **Benefits**:
-- Conversations persist across restarts
-- Can resume previous conversations
-- Search through conversation history
-- Better user experience
+- Prevents API rate limit errors
+- Automatic backoff on 429 responses
+- Better resource management
 
-### 3. `src/core/cache.py`
-**Purpose**: Multi-tier caching for tool results
+### 2. **Conversation Summarization** (`src/core/conversation_summarizer.py`)
+**Purpose**: Manage long conversations to stay within context window limits
 
 **Features**:
-- In-memory caching with TTL
-- Persistent disk cache for app info
-- Separate caches for files, commands, and apps
-- Cache statistics and invalidation
+- Automatic summarization when context exceeds threshold
+- Preserves recent messages intact
+- Uses LLM to generate concise summaries
+- Context window usage tracking
 
 **Benefits**:
-- Faster repeated file reads
-- Reduced API calls for cached data
-- Better performance for common operations
+- Can handle very long conversations
+- Prevents token limit errors
+- Maintains conversation continuity
 
-### 4. `src/core/health.py`
-**Purpose**: Health monitoring for all components
+### 3. **Context Management** (`src/core/context_manager.py`)
+**Purpose**: Advanced context window optimization
 
 **Features**:
-- Component health checks (LLM, plugins, system)
-- System resource monitoring (memory, disk, CPU)
-- Circuit breaker pattern support
-- Health status aggregation
+- Sliding window for recent messages
+- Smart fact extraction and preservation
+- Token estimation
+- Multiple compression strategies
 
 **Benefits**:
-- Early detection of issues
-- Better reliability
-- System resource awareness
+- Optimized token usage
+- Important facts preserved during compression
+- Better long-term conversation handling
 
-### 5. `src/core/error_handler.py`
-**Purpose**: Structured error handling and recovery
+### 4. **Metrics Collection** (`src/core/metrics.py`)
+**Purpose**: Track performance and usage metrics
 
 **Features**:
-- Retry strategies with exponential backoff
-- Error boundaries for isolation
-- Circuit breaker pattern
-- Error severity classification
+- Message latency tracking
+- Tool execution time monitoring
+- API call duration metrics
+- Cache hit/miss rates
+- Error rate tracking
+- Decorator for easy function timing
 
 **Benefits**:
-- Automatic retry on transient failures
-- Graceful degradation
-- Better error reporting
-- Prevents cascade failures
-
-## Modified Files
-
-### `src/core/agent.py`
-**Changes**:
-- Added async context manager support (`__aenter__`, `__aexit__`)
-- Integrated conversation store for persistence
-- Added tool result caching
-- Improved error handling with detailed logging
-- Added conversation loading/saving methods
-- Added cache stats to status
-
-**Benefits**:
-- Cleaner resource management
-- Persistent conversations
-- Better performance through caching
-- More robust error handling
-
-### `src/plugins/filesystem/plugin.py`
-**Changes**:
-- Added caching for file reads
-- Cache invalidation on write/delete/move
-- Uses shared tool cache from `src/core/cache.py`
-
-**Benefits**:
-- Faster file operations
-- Reduced disk I/O
-- Better performance for repeated reads
-
-## Architecture Improvements
-
-### 1. **Observability**
-- Structured logging throughout
+- Performance insights
+- Bottleneck identification
+- Usage analytics
 - Health monitoring
-- Cache statistics
-- Error tracking
 
-### 2. **Reliability**
-- Retry logic for transient failures
-- Circuit breakers to prevent cascade failures
-- Error boundaries for isolation
-- Graceful degradation
+### 5. **Enhanced Agent Error Handling** (`src/core/agent.py`)
+**Purpose**: More robust error handling and recovery
 
-### 3. **Performance**
-- Multi-tier caching
-- Cache invalidation on modifications
-- Optimized for read-heavy workloads
+**Features**:
+- Retry logic for Kimi API calls with exponential backoff
+- Tool execution retry for transient failures
+- Error classification (recoverable vs non-recoverable)
+- Tool error history tracking
+- Better error logging with stack traces
+- Maximum iteration limits to prevent infinite loops
 
-### 4. **User Experience**
-- Persistent conversations
-- Conversation search
+**Benefits**:
+- Automatic recovery from transient failures
+- Better error diagnostics
+- Prevents runaway loops
+- Improved reliability
+
+### 6. **Enhanced LLM Client** (`src/core/llm/kimi_client.py`)
+**Purpose**: Better API client with monitoring
+
+**Features**:
+- Request/Error counting statistics
+- Added `create_directory` and `file_info` to AGENT_TOOLS
+- Better error handling for HTTP errors
+
+**Benefits**:
+- Visibility into API usage
+- Complete tool definitions
 - Better error messages
-- Status visibility
 
-## Usage Examples
+## Modified Files Summary
 
-### Using the Agent with Context Manager
-```python
-async with TwizzyAgent() as agent:
-    response = await agent.process_message("Hello!")
-```
+| File | Changes |
+|------|---------|
+| `src/core/agent.py` | Added retry logic, error classification, tool error history, stats tracking |
+| `src/core/llm/kimi_client.py` | Added stats tracking, complete tool definitions |
 
-### Loading a Previous Conversation
-```python
-agent = TwizzyAgent(conversation_id="abc123")
-await agent.start()
-```
+## New Files Summary
 
-### Checking Health
-```python
-from src.core.health import get_health_monitor
-
-monitor = get_health_monitor(agent.kimi_client, agent.registry)
-health = await monitor.check_health()
-print(health.status)  # "healthy", "degraded", or "unhealthy"
-```
-
-### Using Retry Decorator
-```python
-from src.core.error_handler import with_retry, LLM_RETRY
-
-@with_retry(strategy=LLM_RETRY)
-async def call_llm(messages):
-    return await kimi_client.chat(messages)
-```
+| File | Purpose |
+|------|---------|
+| `src/core/rate_limiter.py` | API rate limiting and throttling |
+| `src/core/conversation_summarizer.py` | Automatic conversation summarization |
+| `src/core/context_manager.py` | Context window optimization |
+| `src/core/metrics.py` | Performance metrics collection |
 
 ## Statistics
 
-- **New files created**: 5
+- **New files created**: 4
 - **Files modified**: 2
-- **Lines of code added**: ~2,500
-- **New features**: 15+
+- **Lines of code added**: ~1,200
+- **New features**: 10+
+
+## Usage Examples
+
+### Using Rate Limiter
+```python
+from src.core.rate_limiter import RateLimiter, RateLimitConfig
+
+limiter = RateLimiter(RateLimitConfig(max_requests=50, window_seconds=60))
+
+async with limiter:
+    response = await kimi_client.chat(messages)
+```
+
+### Recording Metrics
+```python
+from src.core.metrics import get_metrics
+
+metrics = get_metrics()
+
+# Record latency
+metrics.record_message_latency(1.5)
+
+# Record tool execution
+metrics.record_tool_execution("read_file", 0.3, success=True)
+
+# Get summary
+summary = metrics.get_summary()
+```
+
+### Using Timer Context
+```python
+from src.core.metrics import get_metrics
+
+with get_metrics().timer("operation_time"):
+    do_something()
+```
+
+### Conversation Summarization
+```python
+from src.core.conversation_summarizer import ConversationSummarizer
+
+summarizer = ConversationSummarizer(kimi_client)
+messages = summarizer.maybe_summarize(conversation_messages)
+```
+
+## Previous Improvements (Earlier)
+
+See previous sections for:
+- Structured logging (`src/core/logging_config.py`)
+- Conversation store (`src/core/conversation_store.py`)
+- Caching system (`src/core/cache.py`)
+- Health monitoring (`src/core/health.py`)
+- Error handling (`src/core/error_handler.py`)
 
 ## Future Improvements
 
 Potential areas for future self-improvement:
-1. Add metrics collection and dashboards
-2. Implement plugin hot-reloading
-3. Add conversation summarization for long contexts
-4. Implement automatic plugin discovery
-5. Add A/B testing for improvements
-6. Create a plugin marketplace
+1. Plugin hot-reloading system
+2. Conversation summarization for long contexts
+3. Automatic plugin discovery
+4. A/B testing framework for improvements
+5. Plugin marketplace
+6. Voice interface integration
+7. Browser automation capabilities

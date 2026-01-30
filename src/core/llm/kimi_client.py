@@ -99,6 +99,8 @@ class KimiClient:
     def __init__(self, config: KimiConfig):
         self.config = config
         self._client: httpx.AsyncClient | None = None
+        self._request_count = 0
+        self._error_count = 0
 
     async def __aenter__(self):
         await self._ensure_client()
@@ -149,6 +151,7 @@ class KimiClient:
             ChatResponse with content and/or tool calls
         """
         client = await self._ensure_client()
+        self._request_count += 1
 
         # Build messages payload
         payload_messages = []
@@ -184,9 +187,18 @@ class KimiClient:
 
         logger.debug(f"Sending chat request to {self.config.provider.value}: {len(messages)} messages, {len(tools or [])} tools")
 
-        response = await client.post("/chat/completions", json=payload)
-        response.raise_for_status()
-        data = response.json()
+        try:
+            response = await client.post("/chat/completions", json=payload)
+            response.raise_for_status()
+            data = response.json()
+        except httpx.HTTPStatusError as e:
+            self._error_count += 1
+            logger.error(f"HTTP error {e.response.status_code}: {e.response.text}")
+            raise
+        except Exception as e:
+            self._error_count += 1
+            logger.error(f"Request error: {e}")
+            raise
 
         # Parse response
         choice = data["choices"][0]
@@ -253,6 +265,14 @@ class KimiClient:
                             yield content
                     except json.JSONDecodeError:
                         continue
+
+    def get_stats(self) -> dict[str, Any]:
+        """Get client statistics."""
+        return {
+            "request_count": self._request_count,
+            "error_count": self._error_count,
+            "error_rate": self._error_count / max(self._request_count, 1),
+        }
 
 
 # Tool definitions for agent capabilities
@@ -340,6 +360,23 @@ AGENT_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "create_directory",
+            "description": "Create a new directory",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute path for the new directory"
+                    }
+                },
+                "required": ["path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "move_file",
             "description": "Move or rename a file/folder",
             "parameters": {
@@ -369,6 +406,23 @@ AGENT_TOOLS = [
                     "path": {
                         "type": "string",
                         "description": "Absolute path to delete"
+                    }
+                },
+                "required": ["path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "file_info",
+            "description": "Get information about a file or directory (size, type, permissions, etc.)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute path to the file or directory"
                     }
                 },
                 "required": ["path"]
@@ -421,6 +475,23 @@ AGENT_TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {}
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_app_info",
+            "description": "Get information about an application",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "app_name": {
+                        "type": "string",
+                        "description": "Name of the application"
+                    }
+                },
+                "required": ["app_name"]
             }
         }
     },

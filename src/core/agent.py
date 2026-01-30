@@ -9,6 +9,8 @@ This is the central intelligence that coordinates all agent activities:
 import asyncio
 import json
 import logging
+import time
+import traceback
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -119,6 +121,16 @@ class ConversationState:
         self.conversation_id = None
 
 
+@dataclass
+class ToolExecutionError:
+    """Information about a tool execution error."""
+    tool_name: str
+    error_type: str
+    error_message: str
+    recoverable: bool
+    retry_count: int = 0
+
+
 class TwizzyAgent:
     """Main agent class that orchestrates all activities."""
 
@@ -151,6 +163,8 @@ class TwizzyAgent:
         self.memory = get_memory()
         self._running = False
         self._conversation_id = conversation_id
+        self._tool_error_history: list[ToolExecutionError] = []
+        self._max_retries = 3
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -165,42 +179,68 @@ class TwizzyAgent:
         """Start the agent and initialize all components."""
         logger.info("Starting TWIZZY agent...")
 
-        # Initialize Kimi client
-        self.kimi_client = KimiClient(self.kimi_config)
-        await self.kimi_client._ensure_client()
+        try:
+            # Initialize Kimi client
+            self.kimi_client = KimiClient(self.kimi_config)
+            await self.kimi_client._ensure_client()
 
-        # Register plugins
-        await self.registry.register(TerminalPlugin())
-        await self.registry.register(FilesystemPlugin())
-        await self.registry.register(ApplicationsPlugin())
+            # Register plugins
+            await self._register_plugins()
 
-        # Load existing conversation if ID provided
-        if self._conversation_id:
-            await self._load_conversation(self._conversation_id)
-        else:
-            # Create new conversation
-            conv = self.conversation_store.create()
-            self.conversation.conversation_id = conv.id
+            # Load existing conversation if ID provided
+            if self._conversation_id:
+                await self._load_conversation(self._conversation_id)
+            else:
+                # Create new conversation
+                conv = self.conversation_store.create()
+                self.conversation.conversation_id = conv.id
 
-        self._running = True
-        logger.info(f"TWIZZY agent started successfully (conversation: {self.conversation.conversation_id})")
+            self._running = True
+            logger.info(f"TWIZZY agent started successfully (conversation: {self.conversation.conversation_id})")
+            
+        except Exception as e:
+            logger.error(f"Failed to start agent: {e}")
+            logger.error(traceback.format_exc())
+            raise
+
+    async def _register_plugins(self):
+        """Register all capability plugins."""
+        plugins = [
+            TerminalPlugin(),
+            FilesystemPlugin(),
+            ApplicationsPlugin(),
+        ]
+        
+        for plugin in plugins:
+            try:
+                await self.registry.register(plugin)
+                logger.debug(f"Registered plugin: {plugin.name}")
+            except Exception as e:
+                logger.error(f"Failed to register plugin {plugin.name}: {e}")
 
     async def stop(self):
         """Stop the agent and cleanup."""
         logger.info("Stopping TWIZZY agent...")
         self._running = False
 
-        # Save conversation state
-        if self.conversation.conversation_id:
-            await self._save_conversation()
+        try:
+            # Save conversation state
+            if self.conversation.conversation_id:
+                await self._save_conversation()
 
-        if self.kimi_client:
-            await self.kimi_client.close()
+            if self.kimi_client:
+                await self.kimi_client.close()
 
-        # Unregister all plugins
-        for plugin in self.registry.get_all_plugins():
-            await self.registry.unregister(plugin.name)
-
+            # Unregister all plugins
+            for plugin in self.registry.get_all_plugins():
+                try:
+                    await self.registry.unregister(plugin.name)
+                except Exception as e:
+                    logger.warning(f"Error unregistering plugin {plugin.name}: {e}")
+                    
+        except Exception as e:
+            logger.error(f"Error during shutdown: {e}")
+        
         logger.info("TWIZZY agent stopped")
 
     async def _load_conversation(self, conversation_id: str) -> bool:
@@ -212,26 +252,31 @@ class TwizzyAgent:
         Returns:
             True if loaded successfully
         """
-        conv = self.conversation_store.get(conversation_id)
-        if conv is None:
-            logger.warning(f"Conversation not found: {conversation_id}")
+        try:
+            conv = self.conversation_store.get(conversation_id)
+            if conv is None:
+                logger.warning(f"Conversation not found: {conversation_id}")
+                return False
+
+            # Convert stored messages back to Message objects
+            self.conversation.messages = [
+                Message(
+                    role=msg["role"],
+                    content=msg["content"],
+                    tool_calls=msg.get("tool_calls"),
+                    tool_call_id=msg.get("tool_call_id"),
+                    reasoning_content=msg.get("reasoning_content"),
+                )
+                for msg in conv.messages
+            ]
+            self.conversation.conversation_id = conversation_id
+
+            logger.info(f"Loaded conversation: {conversation_id} ({len(conv.messages)} messages)")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error loading conversation: {e}")
             return False
-
-        # Convert stored messages back to Message objects
-        self.conversation.messages = [
-            Message(
-                role=msg["role"],
-                content=msg["content"],
-                tool_calls=msg.get("tool_calls"),
-                tool_call_id=msg.get("tool_call_id"),
-                reasoning_content=msg.get("reasoning_content"),
-            )
-            for msg in conv.messages
-        ]
-        self.conversation.conversation_id = conversation_id
-
-        logger.info(f"Loaded conversation: {conversation_id} ({len(conv.messages)} messages)")
-        return True
 
     async def _save_conversation(self) -> bool:
         """Save the current conversation to storage.
@@ -242,16 +287,21 @@ class TwizzyAgent:
         if not self.conversation.conversation_id:
             return False
 
-        # Save to conversation store
-        success = self.conversation_store.save_messages(
-            self.conversation.conversation_id,
-            self.conversation.messages,
-        )
-        
-        # Also save to persistent memory
-        self._save_to_memory()
-        
-        return success
+        try:
+            # Save to conversation store
+            success = self.conversation_store.save_messages(
+                self.conversation.conversation_id,
+                self.conversation.messages,
+            )
+            
+            # Also save to persistent memory
+            self._save_to_memory()
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"Error saving conversation: {e}")
+            return False
     
     def _save_to_memory(self) -> None:
         """Save conversation to persistent memory."""
@@ -282,6 +332,7 @@ class TwizzyAgent:
             return "Agent is not running. Please start the agent first."
 
         logger.info(f"Processing message: {user_message[:100]}...")
+        start_time = time.time()
 
         # Add user message to conversation
         self.conversation.add_user_message(user_message)
@@ -298,10 +349,15 @@ class TwizzyAgent:
 
         try:
             # Call Kimi for response
-            response = await self.kimi_client.chat(messages, tools=tools)
+            response = await self._call_kimi_with_retry(messages, tools)
 
             # Handle tool calls
-            while response.tool_calls:
+            max_iterations = 10  # Prevent infinite loops
+            iteration = 0
+            
+            while response.tool_calls and iteration < max_iterations:
+                iteration += 1
+                
                 # First, add the assistant message with tool calls (MUST come before tool results)
                 self.conversation.add_assistant_message(
                     content=response.content or "",
@@ -318,7 +374,7 @@ class TwizzyAgent:
 
                 # Then execute each tool call and add results
                 for tool_call in response.tool_calls:
-                    result = await self._execute_tool_call(tool_call)
+                    result = await self._execute_tool_call_with_retry(tool_call)
                     self.conversation.add_tool_result(tool_call.id, result)
 
                 # Save conversation after each tool execution
@@ -326,7 +382,7 @@ class TwizzyAgent:
 
                 # Get next response from Kimi
                 messages = self.conversation.get_context_messages()
-                response = await self.kimi_client.chat(messages, tools=tools)
+                response = await self._call_kimi_with_retry(messages, tools)
 
             # Final response (no more tool calls)
             final_content = response.content or "Task completed."
@@ -335,6 +391,9 @@ class TwizzyAgent:
             # Save final state
             await self._save_conversation()
 
+            duration = time.time() - start_time
+            logger.info(f"Message processed in {duration:.2f}s")
+            
             return final_content
 
         except Exception as e:
@@ -344,33 +403,135 @@ class TwizzyAgent:
             await self._save_conversation()
             return error_msg
 
-    async def _execute_tool_call(self, tool_call: ToolCall) -> ToolResult:
-        """Execute a single tool call.
+    async def _call_kimi_with_retry(
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None = None,
+        max_retries: int = 3,
+    ) -> ChatResponse:
+        """Call Kimi API with retry logic.
+        
+        Args:
+            messages: Messages to send
+            tools: Optional tool definitions
+            max_retries: Maximum retry attempts
+            
+        Returns:
+            ChatResponse from Kimi
+        """
+        last_error = None
+        
+        for attempt in range(max_retries):
+            try:
+                if not self.kimi_client:
+                    raise RuntimeError("Kimi client not initialized")
+                    
+                return await self.kimi_client.chat(messages, tools=tools)
+                
+            except Exception as e:
+                last_error = e
+                error_str = str(e).lower()
+                
+                # Don't retry on certain errors
+                if "invalid" in error_str or "authentication" in error_str:
+                    raise
+                
+                # Exponential backoff
+                wait_time = 2 ** attempt
+                logger.warning(f"Kimi API call failed (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {wait_time}s...")
+                await asyncio.sleep(wait_time)
+        
+        # All retries exhausted
+        raise last_error or RuntimeError("Failed to get response from Kimi API")
+
+    async def _execute_tool_call_with_retry(self, tool_call: ToolCall) -> ToolResult:
+        """Execute a tool call with retry logic for transient failures.
+        
+        Args:
+            tool_call: The tool call to execute
+            
+        Returns:
+            ToolResult from execution
+        """
+        tool_name = tool_call.name
+        arguments = tool_call.arguments
+        
+        for attempt in range(self._max_retries):
+            try:
+                result = await self._execute_tool_call_internal(tool_name, arguments)
+                
+                # If successful, clear any previous errors for this tool
+                self._tool_error_history = [
+                    e for e in self._tool_error_history if e.tool_name != tool_name
+                ]
+                
+                return result
+                
+            except Exception as e:
+                error_str = str(e).lower()
+                
+                # Check if error is recoverable
+                recoverable = any(keyword in error_str for keyword in [
+                    "timeout", "connection", "temporary", "busy", "retry"
+                ])
+                
+                error_info = ToolExecutionError(
+                    tool_name=tool_name,
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    recoverable=recoverable,
+                    retry_count=attempt,
+                )
+                self._tool_error_history.append(error_info)
+                
+                if not recoverable or attempt == self._max_retries - 1:
+                    logger.error(f"Tool {tool_name} failed after {attempt + 1} attempts: {e}")
+                    return ToolResult(
+                        success=False,
+                        output=None,
+                        error=f"Tool execution failed: {str(e)}"
+                    )
+                
+                # Wait before retry
+                wait_time = 2 ** attempt
+                logger.warning(f"Tool {tool_name} failed (attempt {attempt + 1}), retrying in {wait_time}s: {e}")
+                await asyncio.sleep(wait_time)
+        
+        # Should not reach here
+        return ToolResult(
+            success=False,
+            output=None,
+            error="Unexpected error in retry logic"
+        )
+
+    async def _execute_tool_call_internal(self, tool_name: str, arguments: dict) -> ToolResult:
+        """Execute a single tool call (internal method).
 
         Args:
-            tool_call: The tool call from Kimi
+            tool_name: Name of the tool
+            arguments: Tool arguments
 
         Returns:
             ToolResult from executing the tool
         """
-        logger.info(f"Executing tool: {tool_call.name}")
-        logger.debug(f"Tool arguments: {tool_call.arguments}")
+        logger.info(f"Executing tool: {tool_name}")
+        logger.debug(f"Tool arguments: {arguments}")
 
         # Check cache for certain operations
-        cached_result = self._check_cache(tool_call.name, tool_call.arguments)
+        cached_result = self._check_cache(tool_name, arguments)
         if cached_result is not None:
-            logger.debug(f"Cache hit for {tool_call.name}")
+            logger.debug(f"Cache hit for {tool_name}")
             return cached_result
 
         result = await self.registry.execute_tool(
-            tool_call.name,
-            **tool_call.arguments
+            tool_name,
+            **arguments
         )
 
         # Cache the result if appropriate
-        self._cache_result(tool_call.name, tool_call.arguments, result)
+        self._cache_result(tool_name, arguments, result)
 
-        logger.info(f"Tool {tool_call.name} result: success={result.success}")
+        logger.info(f"Tool {tool_name} result: success={result.success}")
         return result
 
     def _check_cache(self, tool_name: str, arguments: dict) -> ToolResult | None:
@@ -458,6 +619,7 @@ class TwizzyAgent:
             "registered_plugins": [p.name for p in self.registry.get_all_plugins()],
             "conversation_length": len(self.conversation.messages),
             "cache_stats": self.tool_cache.get_stats(),
+            "recent_errors": len(self._tool_error_history),
         }
 
     async def get_conversation_history(self) -> dict[str, Any]:

@@ -5,10 +5,11 @@ This module schedules and runs the self-improvement process:
 - Analyzes for improvement opportunities
 - Generates and tests improvements
 - Deploys improvements with Git tracking
+- Automatically commits and pushes to GitHub
 """
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
@@ -16,6 +17,7 @@ from typing import Any, Callable
 from .analyzer import ImprovementAnalyzer, ImprovementOpportunity
 from .generator import ImprovementGenerator, Improvement
 from .rollback import RollbackManager
+from .git_auto_commit import GitAutoCommit, GitCommitResult
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,9 @@ class ImprovementResult:
     message: str
     changes_applied: int
     timestamp: datetime
+    git_result: GitCommitResult | None = field(default=None)
+    commit_hash: str | None = field(default=None)
+    pushed_to_github: bool = field(default=False)
 
 
 class ImprovementScheduler:
@@ -40,6 +45,7 @@ class ImprovementScheduler:
         project_root: Path,
         idle_threshold_seconds: int = 300,  # 5 minutes
         max_improvements_per_session: int = 3,
+        auto_push_to_github: bool = True,
     ):
         """Initialize the scheduler.
 
@@ -48,15 +54,18 @@ class ImprovementScheduler:
             project_root: Root directory of the project
             idle_threshold_seconds: How long before considering agent idle
             max_improvements_per_session: Max improvements to apply in one session
+            auto_push_to_github: Whether to automatically push to GitHub
         """
         self.kimi_client = kimi_client
         self.project_root = project_root
         self.idle_threshold = timedelta(seconds=idle_threshold_seconds)
         self.max_improvements = max_improvements_per_session
+        self.auto_push_to_github = auto_push_to_github
 
         self.analyzer = ImprovementAnalyzer()
         self.generator = ImprovementGenerator(kimi_client, project_root)
         self.rollback = RollbackManager(project_root)
+        self.git_committer = GitAutoCommit(project_root)
 
         self._last_activity = datetime.now()
         self._running = False
@@ -75,6 +84,12 @@ class ImprovementScheduler:
     def on_improvement(self, callback: Callable[[ImprovementResult], None]):
         """Register a callback for when improvements are made."""
         self._on_improvement_callback = callback
+
+    def set_auto_push(self, enabled: bool):
+        """Enable or disable automatic GitHub push."""
+        self.auto_push_to_github = enabled
+        self.git_committer.set_enabled(enabled)
+        logger.info(f"Auto-push to GitHub {'enabled' if enabled else 'disabled'}")
 
     async def start(self):
         """Start the improvement scheduler."""
@@ -147,6 +162,7 @@ class ImprovementScheduler:
             ImprovementResult with success status
         """
         logger.info(f"Processing improvement: {opportunity.description}")
+        timestamp = datetime.now()
 
         try:
             # Generate improvement
@@ -157,7 +173,7 @@ class ImprovementScheduler:
                     success=False,
                     message="Failed to generate improvement",
                     changes_applied=0,
-                    timestamp=datetime.now(),
+                    timestamp=timestamp,
                 )
 
             # Validate improvement
@@ -168,7 +184,7 @@ class ImprovementScheduler:
                     success=False,
                     message=f"Validation failed: {'; '.join(errors)}",
                     changes_applied=0,
-                    timestamp=datetime.now(),
+                    timestamp=timestamp,
                 )
 
             # Create snapshot before applying
@@ -178,6 +194,7 @@ class ImprovementScheduler:
 
             # Apply changes
             applied = 0
+            files_changed = []
             for change in improvement.changes:
                 try:
                     if change.change_type == "create":
@@ -186,6 +203,7 @@ class ImprovementScheduler:
                     elif change.change_type == "modify":
                         change.file_path.write_text(change.new_content)
                     applied += 1
+                    files_changed.append(str(change.file_path.relative_to(self.project_root)))
                 except Exception as e:
                     logger.error(f"Failed to apply change to {change.file_path}: {e}")
                     # Rollback on error
@@ -195,7 +213,7 @@ class ImprovementScheduler:
                         success=False,
                         message=f"Failed to apply changes: {e}",
                         changes_applied=0,
-                        timestamp=datetime.now(),
+                        timestamp=timestamp,
                     )
 
             # Run tests if provided
@@ -209,18 +227,42 @@ class ImprovementScheduler:
                         success=False,
                         message="Tests failed after applying changes",
                         changes_applied=0,
-                        timestamp=datetime.now(),
+                        timestamp=timestamp,
                     )
 
-            # Commit the improvement
+            # Commit the improvement locally
             await self.rollback.commit_improvement(improvement)
+
+            # Auto-commit and push to GitHub
+            git_result = None
+            commit_hash = None
+            pushed = False
+            
+            if self.auto_push_to_github:
+                logger.info("Auto-committing and pushing to GitHub...")
+                git_result = await self.git_committer.commit_and_push_improvement(
+                    title=improvement.title,
+                    description=improvement.description,
+                    improvement_id=improvement.id,
+                    files_changed=files_changed,
+                )
+                commit_hash = git_result.commit_hash
+                pushed = git_result.pushed
+                
+                if git_result.success:
+                    logger.info(f"🚀 Improvement committed and pushed: {git_result.message}")
+                else:
+                    logger.warning(f"Git operation issue: {git_result.message}")
 
             return ImprovementResult(
                 improvement_id=opportunity.id,
                 success=True,
                 message=f"Applied: {improvement.title}",
                 changes_applied=applied,
-                timestamp=datetime.now(),
+                timestamp=timestamp,
+                git_result=git_result,
+                commit_hash=commit_hash,
+                pushed_to_github=pushed,
             )
 
         except Exception as e:
@@ -230,7 +272,7 @@ class ImprovementScheduler:
                 success=False,
                 message=str(e),
                 changes_applied=0,
-                timestamp=datetime.now(),
+                timestamp=timestamp,
             )
 
     async def _run_tests(self, test_code: str) -> bool:
@@ -329,17 +371,64 @@ class ImprovementScheduler:
             self._on_improvement_callback(result)
 
         if result.success:
-            return {
+            response = {
                 "success": True,
                 "improvement": result.message,
                 "improvement_id": result.improvement_id,
-                "files_changed": result.changes_applied
+                "files_changed": result.changes_applied,
+                "commit_hash": result.commit_hash,
+                "pushed_to_github": result.pushed_to_github,
             }
+            
+            if result.git_result:
+                response["git_message"] = result.git_result.message
+                
+            return response
         else:
             return {
                 "success": False,
                 "error": result.message
             }
+
+    async def commit_manual_changes(self, message: str, description: str = "") -> dict:
+        """Commit and push manual changes to GitHub.
+        
+        Args:
+            message: Commit message
+            description: Extended description
+            
+        Returns:
+            Dict with success status
+        """
+        result = await self.git_committer.commit_and_push_manual_changes(message, description)
+        
+        return {
+            "success": result.success,
+            "message": result.message,
+            "commit_hash": result.commit_hash,
+            "pushed": result.pushed,
+            "files_changed": result.files_changed,
+            "error": result.error,
+        }
+
+    async def get_git_status(self) -> dict:
+        """Get current git status."""
+        is_repo = await self.git_committer.is_git_repo()
+        has_remote = await self.git_committer.has_remote() if is_repo else False
+        remote_url = await self.git_committer.get_remote_url() if has_remote else None
+        has_changes = await self.git_committer.has_changes_to_commit() if is_repo else False
+        changed_files = await self.git_committer.get_changed_files() if has_changes else []
+        history = await self.git_committer.get_commit_history(5) if is_repo else []
+        
+        return {
+            "is_git_repo": is_repo,
+            "has_remote": has_remote,
+            "remote_url": remote_url,
+            "has_uncommitted_changes": has_changes,
+            "changed_files": changed_files,
+            "auto_push_enabled": self.auto_push_to_github,
+            "recent_commits": history,
+        }
 
 
 # Global scheduler instance
@@ -364,5 +453,6 @@ def get_scheduler(agent=None) -> ImprovementScheduler:
             project_root=project_root,
             idle_threshold_seconds=300,
             max_improvements_per_session=3,
+            auto_push_to_github=True,
         )
     return _scheduler

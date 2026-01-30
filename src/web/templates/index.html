@@ -3,20 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TWIZZY - AI Agent</title>
+    <title>TWIZZY - AI Agent with Memory</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="app">
+        <!-- Toast Notifications Container -->
+        <div class="toast-container" id="toastContainer"></div>
+
         <!-- Conversations Sidebar -->
-        <aside class="sidebar-conversations">
+        <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
-                <div class="logo">
+                <div class="logo" title="TWIZZY - Your AI Agent">
                     <span class="logo-icon">🧠</span>
                     <span class="logo-text">TWIZZY</span>
                 </div>
-                <button class="btn-new-chat" id="newChatBtn" title="New Chat">
+                <button class="btn-new-chat" id="newChatBtn" title="New Chat (Cmd+N)">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="12" y1="5" x2="12" y2="19"></line>
                         <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -30,24 +33,26 @@
                     <circle cx="11" cy="11" r="8"></circle>
                     <path d="m21 21-4.35-4.35"></path>
                 </svg>
-                <input type="text" id="searchChats" placeholder="Search conversations...">
+                <input type="text" id="searchChats" placeholder="Search conversations... (Cmd+K)">
             </div>
             
             <div class="conversations-list" id="conversationsList">
-                <!-- Conversations will be loaded here -->
-                <div class="loading-conversations">Loading...</div>
+                <div class="loading-state">
+                    <div class="spinner"></div>
+                    <span>Loading conversations...</span>
+                </div>
             </div>
             
             <div class="sidebar-footer">
                 <nav class="nav-links">
-                    <a href="/settings" class="nav-link">
+                    <a href="/settings" class="nav-link" title="Settings">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <circle cx="12" cy="12" r="3"></circle>
                             <path d="M12 1v6m0 6v6m4.22-10.22l4.24-4.24M6.34 6.34L2.1 2.1m17.8 17.8l-4.24-4.24M6.34 17.66l-4.24 4.24"></path>
                         </svg>
                         Settings
                     </a>
-                    <a href="/improvements" class="nav-link">
+                    <a href="/improvements" class="nav-link" title="Self-Improvements">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48 2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48 2.83-2.83"></path>
                         </svg>
@@ -65,6 +70,13 @@
         <main class="main-content">
             <!-- Chat Header -->
             <header class="chat-header">
+                <button class="menu-toggle" id="menuToggle" title="Toggle Menu">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="3" y1="6" x2="21" y2="6"></line>
+                        <line x1="3" y1="12" x2="21" y2="12"></line>
+                        <line x1="3" y1="18" x2="21" y2="18"></line>
+                    </svg>
+                </button>
                 <div class="chat-title">
                     <h1 id="chatTitle">New Chat</h1>
                     <span class="chat-subtitle" id="chatSubtitle">Start a conversation</span>
@@ -82,15 +94,44 @@
             <!-- Messages Area -->
             <div class="messages-container" id="messagesContainer">
                 <div class="messages" id="messages">
-                    <div class="welcome-message">
+                    <!-- Welcome Screen -->
+                    <div class="welcome-message" id="welcomeScreen">
                         <div class="welcome-icon">🧠</div>
                         <h2>Welcome to TWIZZY</h2>
-                        <p>Your autonomous Mac assistant with persistent memory. I remember all our conversations.</p>
+                        <p>Your autonomous Mac assistant with <strong>persistent memory</strong>.<br>I remember all our conversations.</p>
+                        
+                        <div class="capabilities">
+                            <div class="capability">
+                                <span class="cap-icon">💻</span>
+                                <span>Control your Mac</span>
+                            </div>
+                            <div class="capability">
+                                <span class="cap-icon">📝</span>
+                                <span>Edit files</span>
+                            </div>
+                            <div class="capability">
+                                <span class="cap-icon">🧠</span>
+                                <span>Self-improve</span>
+                            </div>
+                        </div>
+
                         <div class="suggestions">
-                            <button class="suggestion-chip" data-message="List all files on my Desktop">List Desktop files</button>
-                            <button class="suggestion-chip" data-message="What did we discuss in our last conversation?">Recall last chat</button>
-                            <button class="suggestion-chip" data-message="Show me my conversation history">View history</button>
-                            <button class="suggestion-chip" data-message="Improve your own code">Self-improve</button>
+                            <button class="suggestion-chip" data-message="List all files on my Desktop">
+                                <span class="suggestion-icon">📁</span>
+                                List Desktop files
+                            </button>
+                            <button class="suggestion-chip" data-message="Create a new Python script">
+                                <span class="suggestion-icon">🐍</span>
+                                Create Python script
+                            </button>
+                            <button class="suggestion-chip" data-message="What did we talk about before?">
+                                <span class="suggestion-icon">💭</span>
+                                Recall memory
+                            </button>
+                            <button class="suggestion-chip" data-message="Improve your code">
+                                <span class="suggestion-icon">⚡</span>
+                                Self-improve
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -104,8 +145,9 @@
                             id="messageInput"
                             placeholder="Ask anything... (Press Enter to send, Shift+Enter for new line)"
                             rows="1"
+                            autofocus
                         ></textarea>
-                        <button type="submit" id="sendBtn" class="btn-send" disabled>
+                        <button type="submit" id="sendBtn" class="btn-send" disabled title="Send message">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <line x1="22" y1="2" x2="11" y2="13"></line>
                                 <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
@@ -113,16 +155,35 @@
                         </button>
                     </div>
                     <div class="input-footer">
-                        <span class="memory-indicator">
+                        <span class="memory-indicator" title="All conversations are saved locally">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
                             </svg>
-                            Persistent memory enabled
+                            <span id="memoryStatus">Persistent memory enabled</span>
+                        </span>
+                        <span class="shortcut-hint">
+                            <kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for new line
                         </span>
                     </div>
                 </form>
             </div>
         </main>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="modalTitle">Confirm</h3>
+            </div>
+            <div class="modal-body">
+                <p id="modalMessage">Are you sure?</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="modalCancel">Cancel</button>
+                <button class="btn btn-danger" id="modalConfirm">Confirm</button>
+            </div>
+        </div>
     </div>
 
     <script src="/static/js/app.js"></script>
