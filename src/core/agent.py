@@ -10,11 +10,13 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 from .config import get_kimi_api_key, get_api_provider, load_permissions
 from .llm import KimiClient, KimiConfig
 from .llm.kimi_client import APIProvider
+from .memory import get_memory
 from .llm.kimi_client import ChatResponse, Message, ToolCall
 from .permissions import get_enforcer
 from .conversation_store import ConversationStore, get_conversation_store
@@ -146,6 +148,7 @@ class TwizzyAgent:
         self.conversation = ConversationState()
         self.conversation_store = get_conversation_store()
         self.tool_cache = get_tool_cache()
+        self.memory = get_memory()
         self._running = False
         self._conversation_id = conversation_id
 
@@ -239,10 +242,30 @@ class TwizzyAgent:
         if not self.conversation.conversation_id:
             return False
 
-        return self.conversation_store.save_messages(
+        # Save to conversation store
+        success = self.conversation_store.save_messages(
             self.conversation.conversation_id,
             self.conversation.messages,
         )
+        
+        # Also save to persistent memory
+        self._save_to_memory()
+        
+        return success
+    
+    def _save_to_memory(self) -> None:
+        """Save conversation to persistent memory."""
+        if not self.conversation.conversation_id:
+            return
+            
+        try:
+            self.memory.save_conversation(
+                self.conversation.conversation_id,
+                self.conversation.messages,
+                title=f"Chat {self.conversation.conversation_id[:8]}"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to save to memory: {e}")
 
     async def process_message(self, user_message: str) -> str:
         """Process a user message and return the agent's response.
@@ -437,21 +460,70 @@ class TwizzyAgent:
             "cache_stats": self.tool_cache.get_stats(),
         }
 
-    async def get_conversation_history(self) -> list[dict[str, Any]]:
-        """Get the current conversation history.
+    async def get_conversation_history(self) -> dict[str, Any]:
+        """Get the current conversation history with metadata.
 
         Returns:
-            List of messages in the conversation
+            Dict with conversation_id, title, and messages
         """
-        return [
-            {
-                "role": msg.role,
-                "content": msg.content,
-                "tool_calls": msg.tool_calls,
-                "tool_call_id": msg.tool_call_id,
-            }
-            for msg in self.conversation.messages
-        ]
+        # Also save to persistent memory
+        if self.conversation.conversation_id:
+            self.memory.save_conversation(
+                self.conversation.conversation_id,
+                self.conversation.messages,
+                title=f"Chat {self.conversation.conversation_id[:8]}"
+            )
+        
+        return {
+            "conversation_id": self.conversation.conversation_id,
+            "title": f"Chat {self.conversation.conversation_id[:8]}" if self.conversation.conversation_id else "New Chat",
+            "message_count": len([m for m in self.conversation.messages if m.role != "system"]),
+            "messages": [
+                {
+                    "role": msg.role,
+                    "content": msg.content,
+                    "tool_calls": msg.tool_calls,
+                    "tool_call_id": msg.tool_call_id,
+                    "timestamp": datetime.now().isoformat(),
+                }
+                for msg in self.conversation.messages
+                if msg.role != "system"
+            ]
+        }
+    
+    async def load_conversation(self, conversation_id: str) -> bool:
+        """Load a conversation from persistent memory.
+        
+        Args:
+            conversation_id: The conversation ID to load
+            
+        Returns:
+            True if loaded successfully
+        """
+        try:
+            # First try persistent memory
+            conv_data = self.memory.get_conversation(conversation_id)
+            if conv_data:
+                self.conversation.messages = [
+                    Message(
+                        role=msg["role"],
+                        content=msg["content"],
+                        tool_calls=msg.get("tool_calls"),
+                        tool_call_id=msg.get("tool_call_id"),
+                    )
+                    for msg in conv_data.get("messages", [])
+                ]
+                self.conversation.conversation_id = conversation_id
+                self.conversation.tool_results.clear()
+                logger.info(f"Loaded conversation from memory: {conversation_id}")
+                return True
+            
+            # Fall back to conversation store
+            return await self._load_conversation(conversation_id)
+            
+        except Exception as e:
+            logger.error(f"Error loading conversation: {e}")
+            return False
 
 
 # Global agent instance
