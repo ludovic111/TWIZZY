@@ -284,3 +284,85 @@ class ImprovementScheduler:
             return None
 
         return await self._process_opportunity(opportunities[0])
+
+    async def improve_now(self, focus: str | None = None) -> dict:
+        """Trigger improvement immediately (for web API).
+
+        Args:
+            focus: Optional area to focus improvement on
+
+        Returns:
+            Dict with success status and details
+        """
+        # Rate limiting - prevent too frequent improvements
+        if self._improvement_history:
+            last = self._improvement_history[-1]
+            cooldown = timedelta(minutes=5)
+            if datetime.now() - last.timestamp < cooldown:
+                remaining = cooldown - (datetime.now() - last.timestamp)
+                return {
+                    "success": False,
+                    "error": f"Rate limited. Try again in {int(remaining.total_seconds())} seconds."
+                }
+
+        # Find opportunities (with optional focus)
+        opportunities = self.analyzer.analyze()
+        if focus:
+            # Filter by focus area if provided
+            opportunities = [
+                o for o in opportunities
+                if focus.lower() in o.description.lower()
+                   or focus.lower() in o.type.value.lower()
+            ]
+
+        if not opportunities:
+            return {
+                "success": False,
+                "error": "No improvement opportunities found" + (f" for '{focus}'" if focus else "")
+            }
+
+        # Process the top opportunity
+        result = await self._process_opportunity(opportunities[0])
+        self._improvement_history.append(result)
+
+        if self._on_improvement_callback:
+            self._on_improvement_callback(result)
+
+        if result.success:
+            return {
+                "success": True,
+                "improvement": result.message,
+                "improvement_id": result.improvement_id,
+                "files_changed": result.changes_applied
+            }
+        else:
+            return {
+                "success": False,
+                "error": result.message
+            }
+
+
+# Global scheduler instance
+_scheduler: ImprovementScheduler | None = None
+
+
+def get_scheduler(agent=None) -> ImprovementScheduler:
+    """Get the global scheduler instance.
+
+    Args:
+        agent: Optional agent to initialize scheduler with
+
+    Returns:
+        ImprovementScheduler instance
+    """
+    global _scheduler
+    if _scheduler is None and agent is not None:
+        from pathlib import Path
+        project_root = Path(__file__).parent.parent.parent
+        _scheduler = ImprovementScheduler(
+            kimi_client=agent.kimi_client,
+            project_root=project_root,
+            idle_threshold_seconds=300,
+            max_improvements_per_session=3,
+        )
+    return _scheduler

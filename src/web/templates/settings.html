@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - TWIZZY</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <nav class="sidebar">
+            <div class="logo">
+                <span class="logo-icon">🧠</span>
+                <span class="logo-text">TWIZZY</span>
+            </div>
+            <ul class="nav-links">
+                <li><a href="/">Chat</a></li>
+                <li><a href="/settings" class="active">Settings</a></li>
+                <li><a href="/improvements">Improvements</a></li>
+            </ul>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content settings-page">
+            <header class="page-header">
+                <h1>Settings</h1>
+            </header>
+
+            <div class="settings-container">
+                <!-- API Key Section -->
+                <section class="settings-section">
+                    <h2>API Configuration</h2>
+                    <div class="setting-item">
+                        <label for="apiKeyStatus">Kimi API Key</label>
+                        <div class="api-key-status" id="apiKeyStatus">
+                            <span class="status-badge loading">Checking...</span>
+                        </div>
+                        <div class="api-key-input">
+                            <input type="password" id="apiKeyInput" placeholder="sk-..." />
+                            <button id="saveApiKey" class="btn btn-primary">Save</button>
+                        </div>
+                        <small>Get your API key from <a href="https://platform.moonshot.ai" target="_blank">platform.moonshot.ai</a></small>
+                    </div>
+                </section>
+
+                <!-- Permissions Section -->
+                <section class="settings-section">
+                    <h2>Permissions</h2>
+                    <p class="section-description">Control what TWIZZY can access on your Mac.</p>
+
+                    <div class="permissions-list" id="permissionsList">
+                        <!-- Populated by JavaScript -->
+                    </div>
+                </section>
+
+                <!-- About Section -->
+                <section class="settings-section">
+                    <h2>About</h2>
+                    <div class="about-info">
+                        <div class="info-row">
+                            <span class="label">Version</span>
+                            <span class="value">0.2.0</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Model</span>
+                            <span class="value">Kimi K2.5</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Self-Improvement</span>
+                            <span class="value">Always On</span>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Check API key status
+        async function checkApiKey() {
+            const statusEl = document.getElementById('apiKeyStatus');
+            try {
+                const res = await fetch('/api/api-key/status');
+                const data = await res.json();
+                if (data.configured) {
+                    statusEl.innerHTML = `<span class="status-badge success">Configured (${data.key_prefix})</span>`;
+                } else {
+                    statusEl.innerHTML = `<span class="status-badge warning">Not configured</span>`;
+                }
+            } catch (e) {
+                statusEl.innerHTML = `<span class="status-badge error">Error checking</span>`;
+            }
+        }
+
+        // Save API key
+        document.getElementById('saveApiKey').addEventListener('click', async () => {
+            const key = document.getElementById('apiKeyInput').value;
+            if (!key) return;
+
+            try {
+                const res = await fetch('/api/api-key', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ api_key: key })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert('API key saved!');
+                    document.getElementById('apiKeyInput').value = '';
+                    checkApiKey();
+                }
+            } catch (e) {
+                alert('Error saving API key: ' + e.message);
+            }
+        });
+
+        // Load permissions
+        async function loadPermissions() {
+            const listEl = document.getElementById('permissionsList');
+            try {
+                const res = await fetch('/api/permissions');
+                const data = await res.json();
+
+                listEl.innerHTML = '';
+                for (const [name, config] of Object.entries(data.capabilities || {})) {
+                    const item = document.createElement('div');
+                    item.className = 'permission-item';
+                    item.innerHTML = `
+                        <div class="permission-info">
+                            <span class="permission-name">${name}</span>
+                            <span class="permission-desc">${getPermissionDesc(name)}</span>
+                        </div>
+                        <label class="toggle">
+                            <input type="checkbox" ${config.enabled ? 'checked' : ''}
+                                   onchange="togglePermission('${name}', this.checked)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    `;
+                    listEl.appendChild(item);
+                }
+            } catch (e) {
+                listEl.innerHTML = '<p class="error">Error loading permissions</p>';
+            }
+        }
+
+        function getPermissionDesc(name) {
+            const descs = {
+                terminal: 'Execute shell commands',
+                filesystem: 'Read, write, and manage files',
+                applications: 'Launch, quit, and control apps',
+                browser: 'Web automation',
+                system: 'System settings',
+                ui_control: 'Mouse and keyboard control'
+            };
+            return descs[name] || '';
+        }
+
+        async function togglePermission(name, enabled) {
+            try {
+                await fetch('/api/permissions/toggle', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ capability: name, enabled })
+                });
+            } catch (e) {
+                alert('Error toggling permission: ' + e.message);
+                loadPermissions();
+            }
+        }
+
+        // Initialize
+        checkApiKey();
+        loadPermissions();
+    </script>
+</body>
+</html>

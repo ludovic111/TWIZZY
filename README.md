@@ -4,8 +4,8 @@ An autonomous, self-improving Mac agent powered by **Kimi K2.5** that controls y
 
 ![macOS](https://img.shields.io/badge/macOS-14.0+-purple)
 ![Python](https://img.shields.io/badge/Python-3.11+-blue)
-![Swift](https://img.shields.io/badge/Swift-5.9+-orange)
 ![Kimi K2.5](https://img.shields.io/badge/Kimi-K2.5-green)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-teal)
 
 ## Features
 
@@ -16,18 +16,25 @@ An autonomous, self-improving Mac agent powered by **Kimi K2.5** that controls y
 - **Persistent Conversations** - Resume previous conversations across restarts
 - **Auto-Start** - Runs as a background service, starts on login
 
+### Web-Based Interface
+- **Browser GUI** - Modern dark-themed web interface
+- **Real-time Chat** - WebSocket-powered streaming responses
+- **Auto-Reload** - Server reloads automatically when code changes
+- **Cross-Platform** - Works in any browser
+
 ### Powered by Kimi K2.5
 - **Thinking Mode** - Advanced reasoning with `reasoning_content` support
 - **Tool Calling** - Native function calling for system control
 - **128K Context** - Long conversation memory
 - **Vision Support** - Can understand images (coming soon)
 
-### Self-Improvement System
-- **Automatic Analysis** - Detects failures and slow operations during idle time
+### Self-Improvement System (Always-On)
+- **Continuous Analysis** - Detects failures and slow operations anytime
+- **On-Demand Improvement** - Trigger improvements from the web UI
 - **Code Generation** - Uses Kimi K2.5 to write improvements
-- **Safe Testing** - Tests in Docker sandbox before deploying
+- **Safe Testing** - Tests before deploying
 - **Git Integration** - All changes committed with automatic rollback
-- **Can Modify Itself** - Direct access to its own source code
+- **Auto-Reload** - Server automatically reloads after self-modification
 
 ### Enterprise-Grade Architecture
 - **Multi-tier Caching** - File, command, and app info caching with TTL
@@ -45,7 +52,6 @@ cd ~/Desktop/TWIZZY
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
-swift build
 ```
 
 ### 2. Set Your API Key
@@ -72,23 +78,39 @@ python -c "import keyring; keyring.set_password('com.twizzy.agent', 'kimi_api_ke
 ./scripts/twizzy-start.sh
 ```
 
+This will:
+- Start the uvicorn web server with auto-reload
+- Open your browser to http://127.0.0.1:7777
+
 **Or manually:**
 ```bash
-# Terminal 1: Start daemon
 source .venv/bin/activate
-python -m src.daemon.main
-
-# Terminal 2: Open GUI
-open TwizzyApp.app
+python -m uvicorn src.web.app:app --host 127.0.0.1 --port 7777 --reload
+# Then open http://127.0.0.1:7777 in your browser
 ```
 
-## Usage
+## Web Interface
 
-### GUI App
-- **Dock Icon** - Purple brain icon in your dock
-- **Chat** - Type commands naturally
-- **Permissions** - Toggle capabilities in the sidebar
-- **Menu Bar** - Quick access from menu bar icon
+### Chat Page
+- **Real-time streaming** - Watch responses appear in real-time via WebSocket
+- **Status indicator** - Shows connection status (connected/disconnected)
+- **Clear conversation** - Start fresh with the clear button
+- **Auto-scroll** - Messages automatically scroll into view
+
+### Settings Page
+- **API Key** - Configure your Kimi API key
+- **Permissions** - Toggle capabilities on/off
+  - Terminal: Execute shell commands
+  - Filesystem: Read/write/delete files
+  - Applications: Launch/quit/control apps
+
+### Improvements Page
+- **Improvement History** - View all self-improvements from git history
+- **Improve Now** - Trigger manual self-improvement
+- **Rollback** - Revert any improvement with one click
+- **Focus Area** - Request improvements in specific areas
+
+## Usage
 
 ### Example Commands
 ```
@@ -114,7 +136,7 @@ open TwizzyApp.app
 
 | Script | Description |
 |--------|-------------|
-| `./scripts/twizzy-start.sh` | Start TWIZZY (daemon + GUI) |
+| `./scripts/twizzy-start.sh` | Start TWIZZY web server + open browser |
 | `./scripts/twizzy-kill.sh` | **Emergency stop** - kills everything |
 | `./scripts/install.sh` | Full installation setup |
 
@@ -147,7 +169,7 @@ class KimiConfig:
 
 ### Permissions
 
-Control via GUI or edit `config/permissions.json`:
+Control via web UI or edit `config/permissions.json`:
 
 | Capability | Description | Default |
 |------------|-------------|---------|
@@ -167,44 +189,68 @@ Control via GUI or edit `config/permissions.json`:
 
 ```
 TWIZZY/
-├── TwizzyApp.app/              # macOS app bundle (GUI)
-├── TwizzyApp/                  # SwiftUI source code
-│   ├── Views/                  # Chat, Permissions, Settings
-│   ├── Services/               # AgentBridge (Unix socket client)
-│   └── Models/                 # Data models
 ├── src/
-│   ├── core/                   # Python agent core
-│   │   ├── agent.py            # Main orchestrator
-│   │   ├── llm/                # Kimi K2.5 client
-│   │   │   └── kimi_client.py  # API client with thinking mode
-│   │   ├── ipc/                # Unix socket server (JSON-RPC)
-│   │   ├── cache.py            # Multi-tier caching system
-│   │   ├── conversation_store.py # Persistent conversations
-│   │   ├── health.py           # Health monitoring
-│   │   ├── error_handler.py    # Retry & circuit breakers
-│   │   ├── logging_config.py   # Structured logging
-│   │   ├── config.py           # Configuration management
-│   │   └── permissions.py      # Permission enforcement
-│   ├── plugins/                # Capability plugins
-│   │   ├── terminal/           # Shell command execution
-│   │   ├── filesystem/         # File operations with caching
-│   │   └── applications/       # App control via AppleScript
-│   ├── improvement/            # Self-improvement system
-│   │   ├── analyzer.py         # Opportunity detection
-│   │   ├── generator.py        # Code generation
-│   │   ├── scheduler.py        # Idle-time scheduling
-│   │   └── sandbox.py          # Docker sandbox testing
-│   └── daemon/                 # Background service
-│       └── main.py             # Entry point
+│   ├── web/                       # Web-based GUI
+│   │   ├── app.py                 # FastAPI application
+│   │   ├── websocket.py           # WebSocket connection manager
+│   │   ├── routes/
+│   │   │   ├── chat.py            # Chat REST endpoints
+│   │   │   ├── config.py          # Settings endpoints
+│   │   │   └── improvement.py     # Self-improvement dashboard
+│   │   ├── static/
+│   │   │   ├── css/style.css      # Dark theme styling
+│   │   │   └── js/app.js          # Frontend WebSocket client
+│   │   └── templates/
+│   │       ├── index.html         # Main chat page
+│   │       ├── settings.html      # Settings page
+│   │       └── improvements.html  # Improvement history
+│   │
+│   ├── core/                      # Python agent core
+│   │   ├── agent.py               # Main orchestrator
+│   │   ├── llm/                   # Kimi K2.5 client
+│   │   │   └── kimi_client.py     # API client with thinking mode
+│   │   ├── cache.py               # Multi-tier caching system
+│   │   ├── conversation_store.py  # Persistent conversations
+│   │   ├── health.py              # Health monitoring
+│   │   ├── error_handler.py       # Retry & circuit breakers
+│   │   ├── logging_config.py      # Structured logging
+│   │   ├── config.py              # Configuration management
+│   │   └── permissions.py         # Permission enforcement
+│   │
+│   ├── plugins/                   # Capability plugins
+│   │   ├── terminal/              # Shell command execution
+│   │   ├── filesystem/            # File operations with caching
+│   │   └── applications/          # App control via AppleScript
+│   │
+│   ├── improvement/               # Self-improvement system (always-on)
+│   │   ├── analyzer.py            # Opportunity detection
+│   │   ├── generator.py           # Code generation
+│   │   ├── scheduler.py           # On-demand + idle scheduling
+│   │   └── rollback.py            # Git versioning
+│   │
+│   └── daemon/
+│       └── main.py                # Entry point (uvicorn)
+│
 ├── config/
-│   ├── permissions.json        # Permission settings
-│   └── launchd/                # Auto-start config
+│   ├── permissions.json           # Permission settings
+│   └── launchd/                   # Auto-start config
+│
+├── logs/                          # Server logs
+│   └── twizzy.log
+│
 └── scripts/
-    ├── twizzy-start.sh         # Start everything
-    └── twizzy-kill.sh          # Emergency stop
+    ├── twizzy-start.sh            # Start web server + browser
+    └── twizzy-kill.sh             # Emergency stop
 ```
 
 ## Core Modules
+
+### Web Server (`src/web/`)
+- **FastAPI** application with CORS support
+- **WebSocket** endpoint for real-time chat
+- **Jinja2** templates for HTML pages
+- **Static files** served for CSS/JS
+- **Auto-reload** via uvicorn --reload
 
 ### Kimi K2.5 Client (`src/core/llm/kimi_client.py`)
 - OpenAI-compatible API client
@@ -245,14 +291,15 @@ TWIZZY/
 
 ## Self-Improvement System
 
-TWIZZY can analyze and improve its own code:
+TWIZZY can analyze and improve its own code **anytime** (not just during idle):
 
 1. **Detection** - Monitors for failures, slow operations, missing capabilities
-2. **Analysis** - During idle time (5+ min), analyzes improvement opportunities
+2. **Trigger** - Click "Improve Now" in web UI or wait for idle detection
 3. **Generation** - Uses Kimi K2.5 to write improvements
-4. **Testing** - Tests in Docker sandbox
+4. **Testing** - Validates changes before applying
 5. **Deployment** - Commits to Git with `AUTO-IMPROVEMENT` tag
-6. **Rollback** - Automatic revert if errors increase
+6. **Auto-Reload** - Server reloads automatically, no restart needed
+7. **Rollback** - One-click revert if something breaks
 
 ### View Improvements
 ```bash
@@ -265,29 +312,82 @@ git reset --hard HEAD~1
 ./scripts/twizzy-start.sh
 ```
 
+Or use the **Rollback** button in the web UI!
+
+## API Reference
+
+### REST Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/chat` | POST | Send a message (non-streaming) |
+| `/api/status` | GET | Get agent status |
+| `/api/clear` | POST | Clear conversation |
+| `/api/history` | GET | Get conversation history |
+| `/api/permissions` | GET/PUT | Manage permissions |
+| `/api/api-key` | POST | Set API key |
+| `/api/improvements` | GET | List improvements |
+| `/api/improve-now` | POST | Trigger improvement |
+| `/api/rollback/{hash}` | POST | Rollback to commit |
+
+### WebSocket
+
+Connect to `/ws/chat` for real-time streaming:
+
+```javascript
+const ws = new WebSocket('ws://127.0.0.1:7777/ws/chat');
+
+// Send message
+ws.send(JSON.stringify({ type: 'message', content: 'Hello!' }));
+
+// Receive streaming response
+ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    if (data.type === 'chunk') {
+        console.log(data.content);  // Streaming text
+    } else if (data.type === 'done') {
+        console.log('Response complete');
+    }
+};
+```
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `execute_terminal_command` | Run shell commands |
+| `read_file` | Read file contents |
+| `write_file` | Write/create files |
+| `list_directory` | List directory contents |
+| `move_file` | Move/rename files |
+| `delete_file` | Delete files |
+| `launch_application` | Open apps |
+| `quit_application` | Close apps |
+| `list_running_apps` | Get running apps |
+| `activate_application` | Bring app to front |
+
 ## Logs
 
 ```bash
-# Daemon logs
+# Server logs
+tail -f logs/twizzy.log
+
+# Or if using daemon
 tail -f ~/.twizzy/logs/daemon.log
-
-# Stdout/stderr
-tail -f ~/.twizzy/logs/stdout.log
-tail -f ~/.twizzy/logs/stderr.log
-
-# Error log (structured)
-tail -f ~/.twizzy/logs/error.log
 ```
 
 ## Troubleshooting
 
-### App won't start
+### Server won't start
 ```bash
-# Check daemon
-ps aux | grep "src.daemon.main"
+# Check if port is in use
+lsof -i :7777
+
+# Kill existing process
+./scripts/twizzy-kill.sh
 
 # Check logs
-tail -20 ~/.twizzy/logs/daemon.log
+tail -20 logs/twizzy.log
 ```
 
 ### API key not found
@@ -295,6 +395,8 @@ tail -20 ~/.twizzy/logs/daemon.log
 source .venv/bin/activate
 python -c "import keyring; keyring.set_password('com.twizzy.agent', 'kimi_api_key', 'YOUR_KEY')"
 ```
+
+Or set it via the web UI at http://127.0.0.1:7777/settings
 
 ### Model not available (404)
 Your API key may not have access to certain models. Check which models work:
@@ -313,10 +415,10 @@ for m in models:
 "
 ```
 
-### GUI not connecting
+### WebSocket not connecting
 ```bash
-# Check socket exists
-ls -la /tmp/twizzy.sock
+# Check server is running
+curl http://127.0.0.1:7777/api/status
 
 # Restart everything
 ./scripts/twizzy-kill.sh
@@ -330,44 +432,14 @@ git reset --hard HEAD~1
 ./scripts/twizzy-start.sh
 ```
 
-## API Reference
-
-### IPC Protocol (JSON-RPC 2.0)
-
-TWIZZY uses Unix socket at `/tmp/twizzy.sock`:
-
-```bash
-# Send a chat message
-echo '{"jsonrpc":"2.0","method":"chat","params":{"user_message":"hello"},"id":1}' | nc -U /tmp/twizzy.sock
-
-# Get status
-echo '{"jsonrpc":"2.0","method":"status","params":{},"id":1}' | nc -U /tmp/twizzy.sock
-
-# Clear conversation
-echo '{"jsonrpc":"2.0","method":"clear","params":{},"id":1}' | nc -U /tmp/twizzy.sock
-```
-
-### Available Tools
-
-| Tool | Description |
-|------|-------------|
-| `execute_terminal_command` | Run shell commands |
-| `read_file` | Read file contents |
-| `write_file` | Write/create files |
-| `list_directory` | List directory contents |
-| `move_file` | Move/rename files |
-| `delete_file` | Delete files |
-| `launch_application` | Open apps |
-| `quit_application` | Close apps |
-| `list_running_apps` | Get running apps |
-| `activate_application` | Bring app to front |
+Or use the **Rollback** button in the Improvements page!
 
 ## Requirements
 
 - macOS 14.0+
 - Python 3.11+
-- Swift 5.9+
 - Kimi API key from [Moonshot AI](https://platform.moonshot.ai/)
+- Modern web browser (Chrome, Safari, Firefox)
 
 ## License
 

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TWIZZY - Autonomous Mac Agent</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <nav class="sidebar">
+            <div class="logo">
+                <span class="logo-icon">🧠</span>
+                <span class="logo-text">TWIZZY</span>
+            </div>
+            <ul class="nav-links">
+                <li><a href="/" class="active">Chat</a></li>
+                <li><a href="/settings">Settings</a></li>
+                <li><a href="/improvements">Improvements</a></li>
+            </ul>
+            <div class="status-panel">
+                <div class="status-indicator" id="connectionStatus">
+                    <span class="status-dot disconnected"></span>
+                    <span class="status-text">Disconnected</span>
+                </div>
+                <div class="status-info" id="agentInfo">
+                    <small>Capabilities: --</small>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="chat-header">
+                <h1>Chat with TWIZZY</h1>
+                <button id="clearBtn" class="btn btn-secondary">Clear Chat</button>
+            </header>
+
+            <!-- Chat Messages -->
+            <div class="chat-container" id="chatContainer">
+                <div class="messages" id="messages">
+                    <div class="message assistant">
+                        <div class="message-content">
+                            Hello! I'm TWIZZY, your autonomous Mac assistant powered by Kimi K2.5. I can control your Mac through terminal commands, file operations, and application management. What would you like me to do?
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Input Area -->
+            <div class="input-area">
+                <form id="chatForm">
+                    <div class="input-wrapper">
+                        <textarea
+                            id="messageInput"
+                            placeholder="Ask TWIZZY anything... (Press Enter to send, Shift+Enter for new line)"
+                            rows="1"
+                        ></textarea>
+                        <button type="submit" id="sendBtn" class="btn btn-primary">
+                            Send
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Self-Improvements - TWIZZY</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <nav class="sidebar">
+            <div class="logo">
+                <span class="logo-icon">🧠</span>
+                <span class="logo-text">TWIZZY</span>
+            </div>
+            <ul class="nav-links">
+                <li><a href="/">Chat</a></li>
+                <li><a href="/settings">Settings</a></li>
+                <li><a href="/improvements" class="active">Improvements</a></li>
+            </ul>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content improvements-page">
+            <header class="page-header">
+                <h1>Self-Improvements</h1>
+                <div class="header-actions">
+                    <button id="improveNowBtn" class="btn btn-primary">Improve Now</button>
+                    <button id="rollbackLastBtn" class="btn btn-danger">Rollback Last</button>
+                </div>
+            </header>
+
+            <div class="improvements-container">
+                <!-- Improvement Trigger -->
+                <section class="improve-section">
+                    <h2>Trigger Improvement</h2>
+                    <p>TWIZZY can analyze and improve its own code. Focus on a specific area or let it decide.</p>
+                    <div class="improve-form">
+                        <input type="text" id="improveFocus" placeholder="Focus area (optional, e.g., 'error handling', 'performance')">
+                        <button id="triggerImproveBtn" class="btn btn-primary">Improve Now</button>
+                    </div>
+                    <div id="improveStatus" class="improve-status"></div>
+                </section>
+
+                <!-- Improvement History -->
+                <section class="history-section">
+                    <h2>Improvement History</h2>
+                    <div class="improvements-list" id="improvementsList">
+                        <p class="loading">Loading improvements...</p>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Load improvements
+        async function loadImprovements() {
+            const listEl = document.getElementById('improvementsList');
+            try {
+                const res = await fetch('/api/improvements');
+                const data = await res.json();
+
+                if (data.improvements && data.improvements.length > 0) {
+                    listEl.innerHTML = '';
+                    for (const imp of data.improvements) {
+                        const item = document.createElement('div');
+                        item.className = 'improvement-item';
+                        item.innerHTML = `
+                            <div class="improvement-info">
+                                <code class="commit-hash">${imp.hash}</code>
+                                <span class="commit-message">${imp.message}</span>
+                            </div>
+                            <div class="improvement-actions">
+                                <button class="btn btn-small" onclick="viewDetails('${imp.hash}')">Details</button>
+                                <button class="btn btn-small btn-danger" onclick="rollbackTo('${imp.hash}')">Rollback</button>
+                            </div>
+                        `;
+                        listEl.appendChild(item);
+                    }
+                } else {
+                    listEl.innerHTML = '<p class="empty">No self-improvements yet. TWIZZY will improve itself as it learns from usage.</p>';
+                }
+            } catch (e) {
+                listEl.innerHTML = `<p class="error">Error loading improvements: ${e.message}</p>`;
+            }
+        }
+
+        // Trigger improvement
+        async function triggerImprovement() {
+            const focus = document.getElementById('improveFocus').value;
+            const statusEl = document.getElementById('improveStatus');
+
+            statusEl.innerHTML = '<p class="loading">Analyzing and improving...</p>';
+            statusEl.className = 'improve-status loading';
+
+            try {
+                const res = await fetch('/api/improve-now', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ focus: focus || null })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    statusEl.innerHTML = `<p class="success">Improvement applied: ${data.improvement}</p>`;
+                    statusEl.className = 'improve-status success';
+                    loadImprovements();
+                } else {
+                    statusEl.innerHTML = `<p class="warning">${data.error || 'No improvements found'}</p>`;
+                    statusEl.className = 'improve-status warning';
+                }
+            } catch (e) {
+                statusEl.innerHTML = `<p class="error">Error: ${e.message}</p>`;
+                statusEl.className = 'improve-status error';
+            }
+        }
+
+        // View improvement details
+        async function viewDetails(hash) {
+            try {
+                const res = await fetch(`/api/improvements/${hash}`);
+                const data = await res.json();
+                alert(`Commit: ${hash}\n\n${data.message}\n\n${data.diff_stat}`);
+            } catch (e) {
+                alert('Error loading details: ' + e.message);
+            }
+        }
+
+        // Rollback to specific commit
+        async function rollbackTo(hash) {
+            if (!confirm(`Rollback to commit ${hash}? This will undo all changes after this commit.`)) {
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/rollback/${hash}`, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    alert('Rollback successful! Server will reload.');
+                    loadImprovements();
+                } else {
+                    alert('Rollback failed: ' + (data.detail || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        // Rollback last improvement
+        async function rollbackLast() {
+            if (!confirm('Rollback the last self-improvement?')) {
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/rollback-last', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    alert(`Rolled back: ${data.message}\nServer will reload.`);
+                    loadImprovements();
+                } else {
+                    alert('Rollback failed: ' + (data.detail || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        // Event listeners
+        document.getElementById('triggerImproveBtn').addEventListener('click', triggerImprovement);
+        document.getElementById('improveNowBtn').addEventListener('click', triggerImprovement);
+        document.getElementById('rollbackLastBtn').addEventListener('click', rollbackLast);
+
+        // Initialize
+        loadImprovements();
+    </script>
+</body>
+</html>
