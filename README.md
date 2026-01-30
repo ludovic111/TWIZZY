@@ -22,12 +22,11 @@ An autonomous, self-improving Mac agent powered by **Kimi Code API** that contro
 - **Auto-Reload** - Server reloads automatically when code changes
 - **Cross-Platform** - Works in any browser
 
-### Powered by Kimi Code API
-- **Kimi Code Integration** - Uses kimi.com/code API (default)
+### Powered by Kimi API
+- **Moonshot Integration** - Uses Moonshot Open Platform API
 - **Thinking Mode** - Advanced reasoning with `reasoning_content` support
 - **Tool Calling** - Native function calling for system control
 - **128K Context** - Long conversation memory
-- **Multiple Providers** - Supports Kimi Code or Moonshot Open Platform
 
 ### Multi-Channel Gateway
 Connect TWIZZY to your favorite messaging platforms:
@@ -98,7 +97,7 @@ pip install -e .
 
 ### 2. Set Your API Key
 
-Get your **Kimi Code API key** from [kimi.com/code](https://www.kimi.com/code) → Settings → API Keys:
+Get your **Moonshot API key** from [platform.moonshot.ai](https://platform.moonshot.ai/):
 
 ```bash
 # Interactive setup (recommended)
@@ -107,10 +106,6 @@ python scripts/setup-api-key.py
 # Or manually to Keychain
 python -c "import keyring; keyring.set_password('com.twizzy.agent', 'kimi_api_key', 'YOUR_KEY_HERE')"
 ```
-
-**Alternative:** Use Moonshot Open Platform instead:
-1. Set `KIMI_API_PROVIDER=moonshot` in `.env`
-2. Get key from [platform.moonshot.ai](https://platform.moonshot.ai/)
 
 ### 3. Run
 
@@ -220,13 +215,8 @@ cp .env.example .env
 
 Edit `.env`:
 ```
-# Kimi Code API (default)
-KIMI_API_PROVIDER=kimi-code
-KIMI_API_KEY=your_kimi_code_api_key
-
-# Or use Moonshot Open Platform
-# KIMI_API_PROVIDER=moonshot
-# KIMI_API_KEY=your_moonshot_key
+# Moonshot Open Platform API
+KIMI_API_KEY=your_moonshot_api_key
 ```
 
 ### Permissions

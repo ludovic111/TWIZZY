@@ -49,9 +49,15 @@ class KimiConfig:
     thinking: bool = True
 
     def __post_init__(self):
-        """Set base_url based on provider if not explicitly provided."""
+        """Set base_url based on provider if not explicitly provided.
+        
+        Note: Kimi Code (kimi.com/code) is a CLI tool, not a REST API.
+        The only available REST API is Moonshot Open Platform.
+        """
         if self.provider == APIProvider.KIMI_CODE:
-            self.base_url = "https://www.kimi.com/api/v1"
+            # Kimi Code is CLI-only, no REST API available
+            # Fall back to Moonshot
+            self.base_url = "https://api.moonshot.ai/v1"
         elif self.provider == APIProvider.MOONSHOT:
             self.base_url = "https://api.moonshot.ai/v1"
 
