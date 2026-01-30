@@ -16,6 +16,8 @@ from .config import get_kimi_api_key, load_permissions
 from .llm import KimiClient, KimiConfig
 from .llm.kimi_client import ChatResponse, Message, ToolCall
 from .permissions import get_enforcer
+from .conversation_store import ConversationStore, get_conversation_store
+from .cache import get_tool_cache
 from ..plugins import PluginRegistry, ToolResult, get_registry
 from ..plugins.terminal import TerminalPlugin
 from ..plugins.filesystem import FilesystemPlugin
@@ -72,6 +74,7 @@ class ConversationState:
 
     messages: list[Message] = field(default_factory=list)
     tool_results: dict[str, ToolResult] = field(default_factory=dict)
+    conversation_id: str | None = None
 
     def add_user_message(self, content: str):
         """Add a user message."""
@@ -110,17 +113,19 @@ class ConversationState:
         """Clear conversation state."""
         self.messages.clear()
         self.tool_results.clear()
+        self.conversation_id = None
 
 
 class TwizzyAgent:
     """Main agent class that orchestrates all activities."""
 
-    def __init__(self, api_key: str | None = None):
+    def __init__(self, api_key: str | None = None, conversation_id: str | None = None):
         """Initialize the agent.
 
         Args:
             api_key: Kimi API key. If not provided, will try to load from
                     Keychain or environment variable.
+            conversation_id: Optional conversation ID to load existing conversation
         """
         self.api_key = api_key or get_kimi_api_key()
         if not self.api_key:
@@ -134,7 +139,19 @@ class TwizzyAgent:
         self.registry = get_registry()
         self.enforcer = get_enforcer()
         self.conversation = ConversationState()
+        self.conversation_store = get_conversation_store()
+        self.tool_cache = get_tool_cache()
         self._running = False
+        self._conversation_id = conversation_id
+
+    async def __aenter__(self):
+        """Async context manager entry."""
+        await self.start()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.stop()
 
     async def start(self):
         """Start the agent and initialize all components."""
@@ -149,13 +166,25 @@ class TwizzyAgent:
         await self.registry.register(FilesystemPlugin())
         await self.registry.register(ApplicationsPlugin())
 
+        # Load existing conversation if ID provided
+        if self._conversation_id:
+            await self._load_conversation(self._conversation_id)
+        else:
+            # Create new conversation
+            conv = self.conversation_store.create()
+            self.conversation.conversation_id = conv.id
+
         self._running = True
-        logger.info("TWIZZY agent started successfully")
+        logger.info(f"TWIZZY agent started successfully (conversation: {self.conversation.conversation_id})")
 
     async def stop(self):
         """Stop the agent and cleanup."""
         logger.info("Stopping TWIZZY agent...")
         self._running = False
+
+        # Save conversation state
+        if self.conversation.conversation_id:
+            await self._save_conversation()
 
         if self.kimi_client:
             await self.kimi_client.close()
@@ -165,6 +194,50 @@ class TwizzyAgent:
             await self.registry.unregister(plugin.name)
 
         logger.info("TWIZZY agent stopped")
+
+    async def _load_conversation(self, conversation_id: str) -> bool:
+        """Load a conversation from storage.
+
+        Args:
+            conversation_id: The conversation ID to load
+
+        Returns:
+            True if loaded successfully
+        """
+        conv = self.conversation_store.get(conversation_id)
+        if conv is None:
+            logger.warning(f"Conversation not found: {conversation_id}")
+            return False
+
+        # Convert stored messages back to Message objects
+        self.conversation.messages = [
+            Message(
+                role=msg["role"],
+                content=msg["content"],
+                tool_calls=msg.get("tool_calls"),
+                tool_call_id=msg.get("tool_call_id"),
+                reasoning_content=msg.get("reasoning_content"),
+            )
+            for msg in conv.messages
+        ]
+        self.conversation.conversation_id = conversation_id
+
+        logger.info(f"Loaded conversation: {conversation_id} ({len(conv.messages)} messages)")
+        return True
+
+    async def _save_conversation(self) -> bool:
+        """Save the current conversation to storage.
+
+        Returns:
+            True if saved successfully
+        """
+        if not self.conversation.conversation_id:
+            return False
+
+        return self.conversation_store.save_messages(
+            self.conversation.conversation_id,
+            self.conversation.messages,
+        )
 
     async def process_message(self, user_message: str) -> str:
         """Process a user message and return the agent's response.
@@ -201,18 +274,7 @@ class TwizzyAgent:
 
             # Handle tool calls
             while response.tool_calls:
-                # Execute each tool call
-                tool_messages = []
-                for tool_call in response.tool_calls:
-                    result = await self._execute_tool_call(tool_call)
-                    self.conversation.add_tool_result(tool_call.id, result)
-                    tool_messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": json.dumps(result.to_dict())
-                    })
-
-                # Add assistant message with tool calls (preserve reasoning_content for K2.5)
+                # First, add the assistant message with tool calls (MUST come before tool results)
                 self.conversation.add_assistant_message(
                     content=response.content or "",
                     tool_calls=[{
@@ -226,6 +288,14 @@ class TwizzyAgent:
                     reasoning_content=response.reasoning_content
                 )
 
+                # Then execute each tool call and add results
+                for tool_call in response.tool_calls:
+                    result = await self._execute_tool_call(tool_call)
+                    self.conversation.add_tool_result(tool_call.id, result)
+
+                # Save conversation after each tool execution
+                await self._save_conversation()
+
                 # Get next response from Kimi
                 messages = self.conversation.get_context_messages()
                 response = await self.kimi_client.chat(messages, tools=tools)
@@ -234,12 +304,16 @@ class TwizzyAgent:
             final_content = response.content or "Task completed."
             self.conversation.add_assistant_message(final_content, reasoning_content=response.reasoning_content)
 
+            # Save final state
+            await self._save_conversation()
+
             return final_content
 
         except Exception as e:
-            logger.error(f"Error processing message: {e}")
+            logger.error(f"Error processing message: {e}", exc_info=True)
             error_msg = f"Sorry, I encountered an error: {str(e)}"
             self.conversation.add_assistant_message(error_msg)
+            await self._save_conversation()
             return error_msg
 
     async def _execute_tool_call(self, tool_call: ToolCall) -> ToolResult:
@@ -254,27 +328,125 @@ class TwizzyAgent:
         logger.info(f"Executing tool: {tool_call.name}")
         logger.debug(f"Tool arguments: {tool_call.arguments}")
 
+        # Check cache for certain operations
+        cached_result = self._check_cache(tool_call.name, tool_call.arguments)
+        if cached_result is not None:
+            logger.debug(f"Cache hit for {tool_call.name}")
+            return cached_result
+
         result = await self.registry.execute_tool(
             tool_call.name,
             **tool_call.arguments
         )
 
+        # Cache the result if appropriate
+        self._cache_result(tool_call.name, tool_call.arguments, result)
+
         logger.info(f"Tool {tool_call.name} result: success={result.success}")
         return result
 
+    def _check_cache(self, tool_name: str, arguments: dict) -> ToolResult | None:
+        """Check if a tool result is cached.
+
+        Args:
+            tool_name: Name of the tool
+            arguments: Tool arguments
+
+        Returns:
+            Cached result or None
+        """
+        if tool_name == "read_file":
+            path = arguments.get("path", "")
+            cached = self.tool_cache.get_file(path)
+            if cached is not None:
+                return ToolResult(success=True, output=cached)
+
+        elif tool_name == "execute_terminal_command":
+            command = arguments.get("command", "")
+            # Only cache read-only commands
+            if self._is_read_only_command(command):
+                cached = self.tool_cache.get_command(command)
+                if cached is not None:
+                    return ToolResult(success=True, output=cached)
+
+        return None
+
+    def _cache_result(self, tool_name: str, arguments: dict, result: ToolResult) -> None:
+        """Cache a tool result if appropriate.
+
+        Args:
+            tool_name: Name of the tool
+            arguments: Tool arguments
+            result: Tool result
+        """
+        if not result.success:
+            return  # Don't cache failures
+
+        if tool_name == "read_file":
+            path = arguments.get("path", "")
+            self.tool_cache.set_file(path, result.output)
+
+        elif tool_name == "execute_terminal_command":
+            command = arguments.get("command", "")
+            if self._is_read_only_command(command):
+                # Cache for longer since it's read-only
+                self.tool_cache.set_command(command, result.output, ttl=300)
+
+        elif tool_name in ["list_running_apps", "get_app_info"]:
+            app_name = arguments.get("app_name", "")
+            if app_name:
+                self.tool_cache.set_app_info(app_name, result.output)
+
+    def _is_read_only_command(self, command: str) -> bool:
+        """Check if a command is read-only (safe to cache).
+
+        Args:
+            command: The command to check
+
+        Returns:
+            True if the command is read-only
+        """
+        read_only_prefixes = [
+            "ls", "cat", "echo", "pwd", "whoami", "uname",
+            "ps", "top", "df", "du", "find", "grep", "head", "tail",
+            "file", "stat", "which", "whereis", "type",
+        ]
+        cmd = command.strip().lower()
+        return any(cmd.startswith(prefix) for prefix in read_only_prefixes)
+
     def clear_conversation(self):
-        """Clear the conversation history."""
+        """Clear the conversation history and start a new one."""
         self.conversation.clear()
-        logger.info("Conversation cleared")
+        conv = self.conversation_store.create()
+        self.conversation.conversation_id = conv.id
+        logger.info(f"Started new conversation: {conv.id}")
 
     def get_status(self) -> dict[str, Any]:
         """Get current agent status."""
         return {
             "running": self._running,
+            "conversation_id": self.conversation.conversation_id,
             "enabled_capabilities": self.enforcer.get_enabled_capabilities(),
             "registered_plugins": [p.name for p in self.registry.get_all_plugins()],
             "conversation_length": len(self.conversation.messages),
+            "cache_stats": self.tool_cache.get_stats(),
         }
+
+    async def get_conversation_history(self) -> list[dict[str, Any]]:
+        """Get the current conversation history.
+
+        Returns:
+            List of messages in the conversation
+        """
+        return [
+            {
+                "role": msg.role,
+                "content": msg.content,
+                "tool_calls": msg.tool_calls,
+                "tool_call_id": msg.tool_call_id,
+            }
+            for msg in self.conversation.messages
+        ]
 
 
 # Global agent instance
@@ -289,9 +461,17 @@ def get_agent() -> TwizzyAgent:
     return _agent
 
 
-async def create_agent(api_key: str | None = None) -> TwizzyAgent:
-    """Create and start a new agent instance."""
+async def create_agent(api_key: str | None = None, conversation_id: str | None = None) -> TwizzyAgent:
+    """Create and start a new agent instance.
+
+    Args:
+        api_key: Optional API key
+        conversation_id: Optional conversation ID to load
+
+    Returns:
+        Started agent instance
+    """
     global _agent
-    _agent = TwizzyAgent(api_key)
+    _agent = TwizzyAgent(api_key, conversation_id)
     await _agent.start()
     return _agent

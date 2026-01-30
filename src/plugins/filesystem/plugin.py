@@ -10,12 +10,17 @@ from pathlib import Path
 
 from ..base import CapabilityPlugin, Tool, ToolResult
 from ...core.permissions import check_permission, PermissionResult
+from ...core.cache import get_tool_cache
 
 logger = logging.getLogger(__name__)
 
 
 class FilesystemPlugin(CapabilityPlugin):
     """Plugin for filesystem operations."""
+
+    def __init__(self):
+        """Initialize the filesystem plugin."""
+        self.cache = get_tool_cache()
 
     @property
     def name(self) -> str:
@@ -180,8 +185,16 @@ class FilesystemPlugin(CapabilityPlugin):
                 error=f"Not a file: {path}"
             )
 
+        # Check cache first
+        cached = self.cache.get_file(str(resolved))
+        if cached is not None:
+            logger.debug(f"Cache hit for file: {path}")
+            return ToolResult(success=True, output=cached)
+
         try:
             content = resolved.read_text(encoding="utf-8")
+            # Cache the content
+            self.cache.set_file(str(resolved), content)
             return ToolResult(success=True, output=content)
         except UnicodeDecodeError:
             # Try reading as binary for non-text files
@@ -210,6 +223,8 @@ class FilesystemPlugin(CapabilityPlugin):
             # Create parent directories if needed
             resolved.parent.mkdir(parents=True, exist_ok=True)
             resolved.write_text(content, encoding="utf-8")
+            # Invalidate cache for this file
+            self.cache.invalidate_file(str(resolved))
             return ToolResult(
                 success=True,
                 output=f"Successfully wrote {len(content)} characters to {path}"
@@ -290,6 +305,9 @@ class FilesystemPlugin(CapabilityPlugin):
 
         try:
             shutil.move(str(src_resolved), str(dst_resolved))
+            # Invalidate caches
+            self.cache.invalidate_file(str(src_resolved))
+            self.cache.invalidate_file(str(dst_resolved))
             return ToolResult(
                 success=True,
                 output=f"Moved {source} to {destination}"
@@ -322,6 +340,8 @@ class FilesystemPlugin(CapabilityPlugin):
                 resolved.unlink()
             elif resolved.is_dir():
                 resolved.rmdir()  # Only removes empty directories
+            # Invalidate cache
+            self.cache.invalidate_file(str(resolved))
             return ToolResult(
                 success=True,
                 output=f"Deleted {path}"
