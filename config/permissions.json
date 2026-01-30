@@ -4,34 +4,89 @@
       "enabled": true,
       "restrictions": {
         "allow_sudo": false,
-        "blocked_commands": ["rm -rf /", "shutdown", "reboot", "mkfs"]
+        "blocked_commands": [
+          "rm -rf /",
+          "shutdown",
+          "reboot",
+          "mkfs"
+        ],
+        "allowed_paths": [],
+        "blocked_paths": [],
+        "allowed_apps": [
+          "*"
+        ],
+        "blocked_apps": []
       }
     },
     "filesystem": {
       "enabled": true,
       "restrictions": {
+        "allow_sudo": false,
+        "blocked_commands": [],
         "allowed_paths": [],
-        "blocked_paths": ["~/.ssh", "~/.aws", "~/.gnupg", "~/Library/Keychains"]
+        "blocked_paths": [
+          "~/.ssh",
+          "~/.aws",
+          "~/.gnupg",
+          "~/Library/Keychains"
+        ],
+        "allowed_apps": [
+          "*"
+        ],
+        "blocked_apps": []
       }
     },
     "applications": {
       "enabled": true,
       "restrictions": {
-        "allowed_apps": ["*"],
+        "allow_sudo": false,
+        "blocked_commands": [],
+        "allowed_paths": [],
+        "blocked_paths": [],
+        "allowed_apps": [
+          "*"
+        ],
         "blocked_apps": []
       }
     },
     "browser": {
-      "enabled": false,
-      "restrictions": {}
+      "enabled": true,
+      "restrictions": {
+        "allow_sudo": false,
+        "blocked_commands": [],
+        "allowed_paths": [],
+        "blocked_paths": [],
+        "allowed_apps": [
+          "*"
+        ],
+        "blocked_apps": []
+      }
     },
     "system": {
-      "enabled": false,
-      "restrictions": {}
+      "enabled": true,
+      "restrictions": {
+        "allow_sudo": false,
+        "blocked_commands": [],
+        "allowed_paths": [],
+        "blocked_paths": [],
+        "allowed_apps": [
+          "*"
+        ],
+        "blocked_apps": []
+      }
     },
     "ui_control": {
-      "enabled": false,
-      "restrictions": {}
+      "enabled": true,
+      "restrictions": {
+        "allow_sudo": false,
+        "blocked_commands": [],
+        "allowed_paths": [],
+        "blocked_paths": [],
+        "allowed_apps": [
+          "*"
+        ],
+        "blocked_apps": []
+      }
     }
   }
 }

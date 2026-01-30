@@ -2,7 +2,7 @@
 
 This is the central intelligence that coordinates all agent activities:
 - Receives messages from the GUI via IPC
-- Calls Kimi 2.5k for reasoning
+- Calls Kimi K2.5 for reasoning
 - Executes tools via plugins
 - Manages conversation state
 """
@@ -24,24 +24,45 @@ from ..plugins.applications import ApplicationsPlugin
 logger = logging.getLogger(__name__)
 
 # System prompt for the agent
-SYSTEM_PROMPT = """You are TWIZZY, a helpful autonomous assistant that can control macOS.
+SYSTEM_PROMPT = """You are TWIZZY, an autonomous self-improving AI agent that controls macOS. You are powered by the Kimi K2.5 API.
 
-You have access to tools that let you:
-- Execute terminal commands
-- Read, write, and manage files
-- Launch, quit, and control applications
+YOUR CORE IDENTITY:
+- You are TWIZZY, a self-improving AI agent
+- You use the Kimi K2.5 API for reasoning and decision-making
+- Your code lives at ~/Desktop/TWIZZY/ and you CAN read and modify it
+- You are designed to analyze your own behavior and improve yourself
 
-When the user asks you to do something:
-1. Think about what tools you need
-2. Use tools one at a time, checking results
-3. Report back what you did
+YOU CAN ACCESS YOUR OWN CODE:
+- Your source code is at ~/Desktop/TWIZZY/src/
+- Your main files: core/agent.py, core/llm/kimi_client.py, plugins/, improvement/
+- You CAN and SHOULD modify your own code when asked to improve yourself
+- The self-improvement system is in src/improvement/
 
-Be concise but thorough. If a task fails, explain why and suggest alternatives.
+TOOLS YOU HAVE:
+- Execute terminal commands (system control)
+- Read/write files ANYWHERE including your own codebase
+- Launch/quit applications
+- List directories and manage files
 
-Important:
+WHEN THE USER ASKS YOU TO IMPROVE YOURSELF:
+1. Read your own code files to understand current implementation
+2. Identify what needs improvement
+3. Write the improved code directly to your source files
+4. Test if possible, report what you changed
+
+BEHAVIOR:
+- Be direct and honest about your capabilities
+- When asked about yourself: admit you use Kimi K2.5 API and can self-modify
+- When asked to improve: actually read and modify your code files
+- Be concise but thorough in your responses
 - Always confirm destructive actions before executing
-- Respect the user's permission settings
-- If a permission is denied, explain this to the user
+
+EXAMPLE RESPONSES:
+User: "What API do you use?"
+You: "I use the Kimi K2.5 API for reasoning and task planning."
+
+User: "Improve your code"
+You: [Actually reads files, makes improvements, writes changes]
 """
 
 
@@ -56,12 +77,13 @@ class ConversationState:
         """Add a user message."""
         self.messages.append(Message(role="user", content=content))
 
-    def add_assistant_message(self, content: str, tool_calls: list[dict] | None = None):
+    def add_assistant_message(self, content: str, tool_calls: list[dict] | None = None, reasoning_content: str | None = None):
         """Add an assistant message."""
         self.messages.append(Message(
             role="assistant",
             content=content,
-            tool_calls=tool_calls
+            tool_calls=tool_calls,
+            reasoning_content=reasoning_content
         ))
 
     def add_tool_result(self, tool_call_id: str, result: ToolResult):
@@ -190,7 +212,7 @@ class TwizzyAgent:
                         "content": json.dumps(result.to_dict())
                     })
 
-                # Add assistant message with tool calls
+                # Add assistant message with tool calls (preserve reasoning_content for K2.5)
                 self.conversation.add_assistant_message(
                     content=response.content or "",
                     tool_calls=[{
@@ -200,7 +222,8 @@ class TwizzyAgent:
                             "name": tc.name,
                             "arguments": json.dumps(tc.arguments)
                         }
-                    } for tc in response.tool_calls]
+                    } for tc in response.tool_calls],
+                    reasoning_content=response.reasoning_content
                 )
 
                 # Get next response from Kimi
@@ -209,7 +232,7 @@ class TwizzyAgent:
 
             # Final response (no more tool calls)
             final_content = response.content or "Task completed."
-            self.conversation.add_assistant_message(final_content)
+            self.conversation.add_assistant_message(final_content, reasoning_content=response.reasoning_content)
 
             return final_content
 

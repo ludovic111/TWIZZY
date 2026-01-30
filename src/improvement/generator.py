@@ -55,7 +55,7 @@ IMPROVEMENT_PROMPT = """You are an expert Python developer improving an AI agent
 
 TWIZZY is an autonomous Mac agent with these components:
 - Agent core: src/core/agent.py (orchestrator)
-- LLM client: src/core/llm/kimi_client.py (Kimi 2.5k API)
+- LLM client: src/core/llm/kimi_client.py (Kimi K2.5 API)
 - Plugins: src/plugins/ (terminal, filesystem, applications)
 - Self-improvement: src/improvement/
 

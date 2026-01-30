@@ -97,7 +97,7 @@ TWIZZY uses **aggressive self-improvement**:
 
 1. **Analyzes** your usage patterns during idle time (5+ min)
 2. **Detects** failures, slow operations, missing capabilities
-3. **Generates** code improvements using Kimi 2.5k
+3. **Generates** code improvements using Kimi K2.5
 4. **Tests** in Docker sandbox before deploying
 5. **Commits** all changes to Git
 6. **Rolls back** automatically if errors increase
@@ -146,7 +146,7 @@ TWIZZY/
 ├── src/
 │   ├── core/             # Python agent core
 │   │   ├── agent.py      # Main orchestrator
-│   │   ├── llm/          # Kimi 2.5k client
+│   │   ├── llm/          # Kimi K2.5 client
 │   │   └── ipc/          # Unix socket server
 │   ├── plugins/          # Capability plugins
 │   │   ├── terminal/     # Shell commands

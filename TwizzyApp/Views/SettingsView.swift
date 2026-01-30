@@ -100,7 +100,7 @@ struct SettingsView: View {
                 Divider()
                     .frame(width: 200)
 
-                Text("TWIZZY can control your Mac through natural language commands. It uses Kimi 2.5k for intelligent task planning and execution.")
+                Text("TWIZZY can control your Mac through natural language commands. It uses Kimi K2.5 for intelligent task planning and execution.")
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 300)
 

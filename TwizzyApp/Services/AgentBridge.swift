@@ -3,11 +3,8 @@ import Foundation
 /// JSON-RPC client for communicating with the Python agent daemon
 actor AgentBridge {
     private let socketPath: String
-    private var connection: FileHandle?
-    private var inputStream: InputStream?
-    private var outputStream: OutputStream?
+    private var socketFd: Int32 = -1
     private var requestId: Int = 0
-    private var pendingRequests: [Int: CheckedContinuation<Data, Error>] = [:]
 
     init(socketPath: String = "/tmp/twizzy.sock") {
         self.socketPath = socketPath
@@ -15,22 +12,9 @@ actor AgentBridge {
 
     /// Connect to the agent daemon
     func connect() async throws {
-        // Create Unix socket streams
-        var readStream: Unmanaged<CFReadStream>?
-        var writeStream: Unmanaged<CFWriteStream>?
-
-        CFStreamCreatePairWithSocketToHost(
-            nil,
-            "localhost" as CFString, // Placeholder, we'll use Unix socket
-            0,
-            &readStream,
-            &writeStream
-        )
-
-        // For Unix socket, we need a different approach
-        // Using FileHandle with socket
-        let socket = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard socket >= 0 else {
+        // Create Unix socket
+        let sock = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard sock >= 0 else {
             throw BridgeError.connectionFailed("Failed to create socket")
         }
 
@@ -48,27 +32,34 @@ actor AgentBridge {
 
         let connectResult = withUnsafePointer(to: &addr) { ptr in
             ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPtr in
-                Darwin.connect(socket, sockaddrPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+                Darwin.connect(sock, sockaddrPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
             }
         }
 
         guard connectResult == 0 else {
-            close(socket)
+            close(sock)
             throw BridgeError.connectionFailed("Failed to connect to socket: \(String(cString: strerror(errno)))")
         }
 
-        connection = FileHandle(fileDescriptor: socket, closeOnDealloc: true)
+        socketFd = sock
+    }
+
+    /// Check if connected
+    var isConnected: Bool {
+        return socketFd >= 0
     }
 
     /// Disconnect from the agent daemon
     func disconnect() {
-        connection = nil
-        pendingRequests.removeAll()
+        if socketFd >= 0 {
+            close(socketFd)
+            socketFd = -1
+        }
     }
 
     /// Send a JSON-RPC request and get the response
     func call<T: Decodable>(method: String, params: [String: Any] = [:]) async throws -> T {
-        guard let connection = connection else {
+        guard socketFd >= 0 else {
             throw BridgeError.notConnected
         }
 
@@ -88,15 +79,36 @@ actor AgentBridge {
         requestData.append(contentsOf: "\n".utf8)
 
         // Send request
-        try connection.write(contentsOf: requestData)
+        let sendResult = requestData.withUnsafeBytes { buffer in
+            send(socketFd, buffer.baseAddress, buffer.count, 0)
+        }
+        guard sendResult >= 0 else {
+            throw BridgeError.connectionFailed("Failed to send: \(String(cString: strerror(errno)))")
+        }
 
-        // Read response (blocking for now, should be async)
-        guard let responseData = try connection.availableData.isEmpty ? nil : connection.availableData else {
-            throw BridgeError.noResponse
+        // Read response - use a buffer and read until newline
+        var responseBuffer = Data()
+        var readBuffer = [UInt8](repeating: 0, count: 4096)
+
+        while true {
+            let bytesRead = recv(socketFd, &readBuffer, readBuffer.count, 0)
+            if bytesRead <= 0 {
+                if bytesRead == 0 {
+                    throw BridgeError.noResponse
+                }
+                throw BridgeError.connectionFailed("Read error: \(String(cString: strerror(errno)))")
+            }
+
+            responseBuffer.append(contentsOf: readBuffer[0..<bytesRead])
+
+            // Check for newline (end of JSON-RPC message)
+            if responseBuffer.contains(0x0A) { // newline
+                break
+            }
         }
 
         // Parse response
-        guard let response = try JSONSerialization.jsonObject(with: responseData) as? [String: Any] else {
+        guard let response = try JSONSerialization.jsonObject(with: responseBuffer) as? [String: Any] else {
             throw BridgeError.invalidResponse
         }
 
@@ -110,7 +122,19 @@ actor AgentBridge {
         }
 
         // Convert result to expected type
-        let resultData = try JSONSerialization.data(withJSONObject: result)
+        let resultData: Data
+        if let stringResult = result as? String {
+            // Handle plain string results (e.g., chat response)
+            // For String type, return directly without JSON encoding
+            if T.self == String.self {
+                return stringResult as! T
+            }
+            // For other types, wrap in array to make valid JSON
+            resultData = try JSONSerialization.data(withJSONObject: [stringResult])
+        } else {
+            // Handle dict/array results
+            resultData = try JSONSerialization.data(withJSONObject: result)
+        }
         return try JSONDecoder().decode(T.self, from: resultData)
     }
 

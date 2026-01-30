@@ -87,7 +87,7 @@ class CapabilityPlugin(ABC):
     def get_tool_definitions(self) -> list[dict[str, Any]]:
         """Get tool definitions in OpenAI function calling format.
 
-        This format is compatible with Kimi 2.5k's tool calling API.
+        This format is compatible with Kimi K2.5's tool calling API.
         """
         definitions = []
         for tool in self.get_tools():

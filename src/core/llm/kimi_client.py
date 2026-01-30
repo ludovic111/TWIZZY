@@ -1,6 +1,6 @@
-"""Kimi 2.5k API client for TWIZZY.
+"""Kimi K2.5 API client for TWIZZY.
 
-Kimi 2.5k is Moonshot AI's latest model with strong reasoning and tool use capabilities.
+Kimi K2.5 is Moonshot AI's latest model with strong reasoning and tool use capabilities.
 API docs: https://platform.moonshot.ai/docs/guide/kimi-k2-5-quickstart
 """
 import json
@@ -15,15 +15,24 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class KimiConfig:
-    """Configuration for Kimi 2.5k API client."""
+    """Configuration for Kimi K2.5 API client.
+
+    Available models on api.moonshot.ai:
+    - kimi-k2.5 (Kimi K2.5 - latest model with vision + tool use)
+    - kimi-k2-0905-preview (Kimi K2 September 2025)
+    - kimi-k2-turbo-preview (Kimi K2 Turbo)
+    - kimi-k2-thinking (Kimi K2 Thinking model)
+    - moonshot-v1-128k (legacy)
+    """
 
     api_key: str
     base_url: str = "https://api.moonshot.ai/v1"
-    model: str = "kimi-k2.5"
-    temperature: float = 0.6  # Instant mode (use 1.0 for thinking mode)
+    model: str = "kimi-k2.5"  # Kimi K2.5 - latest model with vision and tool use
+    temperature: float = 0.6
     top_p: float = 0.95
     max_tokens: int = 8192
     timeout: float = 120.0
+    thinking: bool = True  # K2.5 has thinking enabled by default
 
 
 @dataclass
@@ -34,6 +43,7 @@ class Message:
     content: str
     tool_calls: list[dict] | None = None
     tool_call_id: str | None = None
+    reasoning_content: str | None = None  # K2.5 thinking mode content
 
 
 @dataclass
@@ -53,10 +63,11 @@ class ChatResponse:
     tool_calls: list[ToolCall] = field(default_factory=list)
     finish_reason: str = "stop"
     usage: dict[str, int] = field(default_factory=dict)
+    reasoning_content: str | None = None  # K2.5 thinking content
 
 
 class KimiClient:
-    """Async client for Kimi 2.5k API with tool calling support."""
+    """Async client for Kimi K2.5 API with tool calling support."""
 
     def __init__(self, config: KimiConfig):
         self.config = config
@@ -92,14 +103,14 @@ class KimiClient:
         self,
         messages: list[Message],
         tools: list[dict[str, Any]] | None = None,
-        thinking: bool = False,
+        thinking: bool | None = None,
     ) -> ChatResponse:
-        """Send a chat completion request to Kimi 2.5k.
+        """Send a chat completion request to Kimi K2.5.
 
         Args:
             messages: List of chat messages
             tools: Optional list of tool definitions for function calling
-            thinking: If True, use thinking mode (temp=1.0) for complex reasoning
+            thinking: If False, disable thinking mode. K2.5 defaults to thinking enabled.
 
         Returns:
             ChatResponse with content and/or tool calls
@@ -114,26 +125,32 @@ class KimiClient:
                 m["tool_calls"] = msg.tool_calls
             if msg.tool_call_id:
                 m["tool_call_id"] = msg.tool_call_id
+            # K2.5: Preserve reasoning_content for assistant messages with tool calls
+            if msg.reasoning_content:
+                m["reasoning_content"] = msg.reasoning_content
             payload_messages.append(m)
+
+        # Determine thinking mode
+        # K2.5: Disable thinking when using tools to avoid API constraints
+        # (with thinking enabled + tools, we must preserve reasoning_content)
+        use_thinking = False if tools else (self.config.thinking if thinking is None else thinking)
 
         # Build request payload
         payload: dict[str, Any] = {
             "model": self.config.model,
             "messages": payload_messages,
-            "temperature": 1.0 if thinking else self.config.temperature,
+            "temperature": self.config.temperature,
             "top_p": self.config.top_p,
             "max_tokens": self.config.max_tokens,
         }
 
+        # K2.5 supports explicit thinking control
+        if not use_thinking:
+            payload["thinking"] = {"type": "disabled"}
+
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
-
-        # Disable thinking mode explicitly if not requested
-        if not thinking:
-            payload["extra_body"] = {
-                "chat_template_kwargs": {"thinking": False}
-            }
 
         logger.debug(f"Sending chat request: {len(messages)} messages, {len(tools or [])} tools")
 
@@ -154,11 +171,15 @@ class KimiClient:
                     arguments=json.loads(tc["function"]["arguments"]),
                 ))
 
+        # K2.5: Capture reasoning_content (required for tool calling with thinking mode)
+        reasoning = message.get("reasoning_content")
+
         return ChatResponse(
             content=message.get("content"),
             tool_calls=tool_calls,
             finish_reason=choice.get("finish_reason", "stop"),
             usage=data.get("usage", {}),
+            reasoning_content=reasoning,
         )
 
     async def stream_chat(
