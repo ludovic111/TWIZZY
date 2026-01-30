@@ -51,7 +51,7 @@ class KimiConfig:
     def __post_init__(self):
         """Set base_url based on provider if not explicitly provided."""
         if self.provider == APIProvider.KIMI_CODE:
-            self.base_url = "https://kimi.com/api/v1"
+            self.base_url = "https://www.kimi.com/api/v1"
         elif self.provider == APIProvider.MOONSHOT:
             self.base_url = "https://api.moonshot.ai/v1"
 
