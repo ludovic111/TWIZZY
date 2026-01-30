@@ -1,0 +1,37 @@
+{
+  "capabilities": {
+    "terminal": {
+      "enabled": true,
+      "restrictions": {
+        "allow_sudo": false,
+        "blocked_commands": ["rm -rf /", "shutdown", "reboot", "mkfs"]
+      }
+    },
+    "filesystem": {
+      "enabled": true,
+      "restrictions": {
+        "allowed_paths": [],
+        "blocked_paths": ["~/.ssh", "~/.aws", "~/.gnupg", "~/Library/Keychains"]
+      }
+    },
+    "applications": {
+      "enabled": true,
+      "restrictions": {
+        "allowed_apps": ["*"],
+        "blocked_apps": []
+      }
+    },
+    "browser": {
+      "enabled": false,
+      "restrictions": {}
+    },
+    "system": {
+      "enabled": false,
+      "restrictions": {}
+    },
+    "ui_control": {
+      "enabled": false,
+      "restrictions": {}
+    }
+  }
+}

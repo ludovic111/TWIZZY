@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Service identifier -->
+    <key>Label</key>
+    <string>com.twizzy.agent</string>
+
+    <!-- Command to run -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>-m</string>
+        <string>src.daemon.main</string>
+    </array>
+
+    <!-- Working directory -->
+    <key>WorkingDirectory</key>
+    <string>/Users/USER/Desktop/TWIZZY</string>
+
+    <!-- Start on login -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Keep alive settings -->
+    <key>KeepAlive</key>
+    <dict>
+        <!-- Restart if it exits with non-zero -->
+        <key>SuccessfulExit</key>
+        <false/>
+        <!-- Restart if it crashes -->
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <!-- Minimum time between restarts -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <!-- Log files -->
+    <key>StandardOutPath</key>
+    <string>/Users/USER/.twizzy/logs/stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/USER/.twizzy/logs/stderr.log</string>
+
+    <!-- Environment variables -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>TWIZZY_HOME</key>
+        <string>/Users/USER/.twizzy</string>
+        <key>PYTHONPATH</key>
+        <string>/Users/USER/Desktop/TWIZZY</string>
+    </dict>
+
+    <!-- Process type (standard for GUI access) -->
+    <key>ProcessType</key>
+    <string>Interactive</string>
+
+    <!-- Enable session management for GUI access -->
+    <key>LimitLoadToSessionType</key>
+    <string>Aqua</string>
+</dict>
+</plist>
