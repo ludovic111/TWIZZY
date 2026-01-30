@@ -33,15 +33,16 @@ struct ChatView: View {
             // Input area
             HStack(spacing: 12) {
                 TextField("Ask TWIZZY anything...", text: $inputText, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .padding(12)
-                    .background(Color(.textBackgroundColor))
-                    .cornerRadius(8)
+                    .textFieldStyle(.roundedBorder)
+                    .padding(4)
                     .focused($isInputFocused)
                     .onSubmit {
                         sendMessage()
                     }
                     .disabled(agentService.isLoading)
+                    .onAppear {
+                        isInputFocused = true
+                    }
 
                 Button(action: sendMessage) {
                     if agentService.isLoading {

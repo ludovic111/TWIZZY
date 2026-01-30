@@ -202,8 +202,16 @@ async def start_server(
     # Register handlers
     if agent:
         server.register_handler("chat", agent.process_message)
-        server.register_handler("status", lambda: agent.get_status())
-        server.register_handler("clear", lambda: agent.clear_conversation())
+
+        async def get_status():
+            return agent.get_status()
+
+        async def clear_conversation():
+            agent.clear_conversation()
+            return {"success": True}
+
+        server.register_handler("status", get_status)
+        server.register_handler("clear", clear_conversation)
 
         # Permission management
         from ..config import load_permissions, save_permissions
