@@ -77,10 +77,27 @@ class ApiKeyRequest(BaseModel):
 @router.post("/api-key")
 async def set_api_key(request: ApiKeyRequest):
     """Set the Kimi API key."""
-    import keyring
+    from ...core.config import set_kimi_api_key
 
     try:
-        keyring.set_password("com.twizzy.agent", "kimi_api_key", request.api_key)
-        return {"success": True, "message": "API key saved"}
+        # Store in keychain (most secure)
+        if set_kimi_api_key(request.api_key, method="keychain"):
+            return {"success": True, "message": "API key saved to Keychain"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to save API key")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api-key/env")
+async def set_api_key_env(request: ApiKeyRequest):
+    """Set the Kimi API key in .env file (for development)."""
+    from ...core.config import set_kimi_api_key
+
+    try:
+        if set_kimi_api_key(request.api_key, method="env"):
+            return {"success": True, "message": "API key saved to .env file"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to save API key")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

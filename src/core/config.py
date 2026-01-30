@@ -13,6 +13,18 @@ import keyring
 
 logger = logging.getLogger(__name__)
 
+# Try to load .env file if python-dotenv is available
+try:
+    from dotenv import load_dotenv
+    # Load .env from project root
+    env_path = Path(__file__).parent.parent.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+        logger.debug(f"Loaded .env from {env_path}")
+    DOTENV_AVAILABLE = True
+except ImportError:
+    DOTENV_AVAILABLE = False
+
 # Default paths
 TWIZZY_HOME = Path(os.environ.get("TWIZZY_HOME", Path.home() / ".twizzy"))
 CONFIG_DIR = Path(__file__).parent.parent.parent / "config"
@@ -167,11 +179,75 @@ def save_permissions(config: PermissionsConfig) -> bool:
 
 
 def get_kimi_api_key() -> str | None:
-    """Get Kimi API key from Keychain or environment."""
-    # Try Keychain first
+    """Get Kimi API key from Keychain, .env file, or environment variable.
+    
+    Priority order:
+    1. Environment variable (KIMI_API_KEY) - highest priority
+    2. Keychain (secure storage)
+    3. .env file (KIMI_API_KEY in .env)
+    """
+    # 1. Check environment variable first (allows runtime override)
+    env_key = os.environ.get("KIMI_API_KEY")
+    if env_key:
+        return env_key
+    
+    # 2. Try Keychain (most secure persistent storage)
     key = SecureConfig.get_api_key("kimi_api_key")
     if key:
         return key
+    
+    # 3. Return None if not found
+    return None
 
-    # Fall back to environment variable
-    return os.environ.get("KIMI_API_KEY")
+
+def set_kimi_api_key(api_key: str, method: str = "keychain") -> bool:
+    """Store Kimi API key securely.
+    
+    Args:
+        api_key: The API key to store
+        method: "keychain" (default), "env", or "both"
+        
+    Returns:
+        True if stored successfully
+    """
+    if method in ("keychain", "both"):
+        if SecureConfig.set_api_key("kimi_api_key", api_key):
+            logger.info("API key stored in Keychain")
+            if method == "keychain":
+                return True
+        else:
+            logger.error("Failed to store API key in Keychain")
+            if method == "keychain":
+                return False
+    
+    if method in ("env", "both"):
+        env_path = Path(__file__).parent.parent.parent / ".env"
+        try:
+            # Read existing content
+            if env_path.exists():
+                content = env_path.read_text()
+            else:
+                content = "# TWIZZY Environment Configuration\n"
+            
+            # Update or add KIMI_API_KEY
+            lines = content.split('\n')
+            new_lines = []
+            found = False
+            for line in lines:
+                if line.startswith('KIMI_API_KEY='):
+                    new_lines.append(f'KIMI_API_KEY={api_key}')
+                    found = True
+                else:
+                    new_lines.append(line)
+            
+            if not found:
+                new_lines.append(f'KIMI_API_KEY={api_key}')
+            
+            env_path.write_text('\n'.join(new_lines))
+            logger.info(f"API key stored in {env_path}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to write .env file: {e}")
+            return False
+    
+    return False
