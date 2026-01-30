@@ -200,6 +200,16 @@ def get_kimi_api_key() -> str | None:
     return None
 
 
+def get_api_provider() -> str:
+    """Get API provider setting.
+    
+    Returns:
+        "kimi-code" (default) or "moonshot"
+    """
+    provider = os.environ.get("KIMI_API_PROVIDER", "kimi-code").lower()
+    return provider if provider in ("kimi-code", "moonshot") else "kimi-code"
+
+
 def set_kimi_api_key(api_key: str, method: str = "keychain") -> bool:
     """Store Kimi API key securely.
     

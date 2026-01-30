@@ -12,8 +12,9 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from .config import get_kimi_api_key, load_permissions
+from .config import get_kimi_api_key, get_api_provider, load_permissions
 from .llm import KimiClient, KimiConfig
+from .llm.kimi_client import APIProvider
 from .llm.kimi_client import ChatResponse, Message, ToolCall
 from .permissions import get_enforcer
 from .conversation_store import ConversationStore, get_conversation_store
@@ -134,7 +135,11 @@ class TwizzyAgent:
                 "or store it in the macOS Keychain."
             )
 
-        self.kimi_config = KimiConfig(api_key=self.api_key)
+        # Determine API provider
+        provider_str = get_api_provider()
+        provider = APIProvider.KIMI_CODE if provider_str == "kimi-code" else APIProvider.MOONSHOT
+        
+        self.kimi_config = KimiConfig(api_key=self.api_key, provider=provider)
         self.kimi_client: KimiClient | None = None
         self.registry = get_registry()
         self.enforcer = get_enforcer()

@@ -40,7 +40,10 @@ def main():
         print("⚠️  No API key configured yet.")
     
     print()
-    print("Get your Kimi API key from: https://platform.moonshot.ai/")
+    print("Get your Kimi Code API key from: https://www.kimi.com/code")
+    print("  → Settings → API Keys")
+    print()
+    print("Or use Moonshot Open Platform: https://platform.moonshot.ai/")
     print()
     
     # Get API key from user
@@ -50,8 +53,8 @@ def main():
         print("❌ No API key provided. Exiting.")
         return
     
-    if not api_key.startswith("sk-"):
-        print("⚠️  Warning: Kimi API keys usually start with 'sk-'")
+    if len(api_key) < 20:
+        print("⚠️  Warning: API key seems short")
         response = input("Continue anyway? (y/N): ").lower()
         if response != 'y':
             return

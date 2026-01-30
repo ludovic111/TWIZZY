@@ -1,38 +1,59 @@
-"""Kimi K2.5 API client for TWIZZY.
+"""Kimi API client for TWIZZY.
 
-Kimi K2.5 is Moonshot AI's latest model with strong reasoning and tool use capabilities.
-API docs: https://platform.moonshot.ai/docs/guide/kimi-k2-5-quickstart
+Supports both:
+- Kimi Code API (kimi.com/code) - Default
+- Moonshot Open Platform (api.moonshot.ai) - Alternative
+
+Get Kimi Code API key from: https://www.kimi.com/code (Settings → API Keys)
 """
 import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator
+from enum import Enum
 
 import httpx
 
 logger = logging.getLogger(__name__)
 
 
+class APIProvider(Enum):
+    """Available API providers."""
+    KIMI_CODE = "kimi-code"           # kimi.com/code API
+    MOONSHOT = "moonshot"             # api.moonshot.ai Open Platform
+
+
 @dataclass
 class KimiConfig:
-    """Configuration for Kimi K2.5 API client.
-
-    Available models on api.moonshot.ai:
-    - kimi-k2.5 (Kimi K2.5 - latest model with vision + tool use)
-    - kimi-k2-0905-preview (Kimi K2 September 2025)
-    - kimi-k2-turbo-preview (Kimi K2 Turbo)
-    - kimi-k2-thinking (Kimi K2 Thinking model)
-    - moonshot-v1-128k (legacy)
+    """Configuration for Kimi API client.
+    
+    Kimi Code API (default):
+    - base_url: https://kimi.com/api/v1
+    - Models: kimi-k2.5, kimi-k2, etc.
+    - Get key: https://www.kimi.com/code → Settings → API Keys
+    
+    Moonshot Open Platform (alternative):
+    - base_url: https://api.moonshot.ai/v1
+    - Models: kimi-k2.5, kimi-k2-0905-preview, etc.
+    - Get key: https://platform.moonshot.ai/
     """
 
     api_key: str
-    base_url: str = "https://api.moonshot.ai/v1"
-    model: str = "kimi-k2.5"  # Kimi K2.5 - latest model with vision and tool use
+    provider: APIProvider = APIProvider.KIMI_CODE
+    base_url: str = "https://kimi.com/api/v1"  # Default to Kimi Code
+    model: str = "kimi-k2.5"  # Kimi K2.5 - latest model
     temperature: float = 0.6
     top_p: float = 0.95
     max_tokens: int = 8192
     timeout: float = 120.0
-    thinking: bool = True  # K2.5 has thinking enabled by default
+    thinking: bool = True
+
+    def __post_init__(self):
+        """Set base_url based on provider if not explicitly provided."""
+        if self.provider == APIProvider.KIMI_CODE:
+            self.base_url = "https://kimi.com/api/v1"
+        elif self.provider == APIProvider.MOONSHOT:
+            self.base_url = "https://api.moonshot.ai/v1"
 
 
 @dataclass
@@ -43,7 +64,7 @@ class Message:
     content: str
     tool_calls: list[dict] | None = None
     tool_call_id: str | None = None
-    reasoning_content: str | None = None  # K2.5 thinking mode content
+    reasoning_content: str | None = None
 
 
 @dataclass
@@ -63,11 +84,11 @@ class ChatResponse:
     tool_calls: list[ToolCall] = field(default_factory=list)
     finish_reason: str = "stop"
     usage: dict[str, int] = field(default_factory=dict)
-    reasoning_content: str | None = None  # K2.5 thinking content
+    reasoning_content: str | None = None
 
 
 class KimiClient:
-    """Async client for Kimi K2.5 API with tool calling support."""
+    """Async client for Kimi API with tool calling support."""
 
     def __init__(self, config: KimiConfig):
         self.config = config
@@ -83,12 +104,18 @@ class KimiClient:
     async def _ensure_client(self) -> httpx.AsyncClient:
         """Ensure HTTP client is initialized."""
         if self._client is None:
+            headers = {
+                "Authorization": f"Bearer {self.config.api_key}",
+                "Content-Type": "application/json",
+            }
+            
+            # Kimi Code API may use different auth format
+            if self.config.provider == APIProvider.KIMI_CODE:
+                headers["X-API-Provider"] = "kimi-code"
+            
             self._client = httpx.AsyncClient(
                 base_url=self.config.base_url,
-                headers={
-                    "Authorization": f"Bearer {self.config.api_key}",
-                    "Content-Type": "application/json",
-                },
+                headers=headers,
                 timeout=httpx.Timeout(self.config.timeout),
             )
         return self._client
@@ -105,12 +132,12 @@ class KimiClient:
         tools: list[dict[str, Any]] | None = None,
         thinking: bool | None = None,
     ) -> ChatResponse:
-        """Send a chat completion request to Kimi K2.5.
+        """Send a chat completion request to Kimi API.
 
         Args:
             messages: List of chat messages
             tools: Optional list of tool definitions for function calling
-            thinking: If False, disable thinking mode. K2.5 defaults to thinking enabled.
+            thinking: If False, disable thinking mode
 
         Returns:
             ChatResponse with content and/or tool calls
@@ -125,14 +152,11 @@ class KimiClient:
                 m["tool_calls"] = msg.tool_calls
             if msg.tool_call_id:
                 m["tool_call_id"] = msg.tool_call_id
-            # K2.5: Preserve reasoning_content for assistant messages with tool calls
             if msg.reasoning_content:
                 m["reasoning_content"] = msg.reasoning_content
             payload_messages.append(m)
 
         # Determine thinking mode
-        # K2.5: Disable thinking when using tools to avoid API constraints
-        # (with thinking enabled + tools, we must preserve reasoning_content)
         use_thinking = False if tools else (self.config.thinking if thinking is None else thinking)
 
         # Build request payload
@@ -144,7 +168,7 @@ class KimiClient:
             "max_tokens": self.config.max_tokens,
         }
 
-        # K2.5 supports explicit thinking control
+        # Disable thinking if requested
         if not use_thinking:
             payload["thinking"] = {"type": "disabled"}
 
@@ -152,7 +176,7 @@ class KimiClient:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
 
-        logger.debug(f"Sending chat request: {len(messages)} messages, {len(tools or [])} tools")
+        logger.debug(f"Sending chat request to {self.config.provider.value}: {len(messages)} messages, {len(tools or [])} tools")
 
         response = await client.post("/chat/completions", json=payload)
         response.raise_for_status()
@@ -171,7 +195,6 @@ class KimiClient:
                     arguments=json.loads(tc["function"]["arguments"]),
                 ))
 
-        # K2.5: Capture reasoning_content (required for tool calling with thinking mode)
         reasoning = message.get("reasoning_content")
 
         return ChatResponse(
@@ -190,7 +213,6 @@ class KimiClient:
         """Stream chat completion for real-time UI updates.
 
         Yields text chunks as they arrive from the API.
-        Note: Tool calls are not supported in streaming mode.
         """
         client = await self._ensure_client()
 

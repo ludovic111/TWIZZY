@@ -1,6 +1,15 @@
 # 🔐 TWIZZY API Key Setup Guide
 
-TWIZZY needs a Kimi API key to function. This guide explains how to get and store your API key securely.
+TWIZZY needs a **Kimi Code API key** to function. This guide explains how to get and store your API key securely.
+
+## API Providers
+
+TWIZZY supports two API providers:
+
+| Provider | Endpoint | Get Key From |
+|----------|----------|--------------|
+| **Kimi Code** (default) | `https://kimi.com/api/v1` | [kimi.com/code](https://www.kimi.com/code) → Settings → API Keys |
+| **Moonshot** (alternative) | `https://api.moonshot.ai/v1` | [platform.moonshot.ai](https://platform.moonshot.ai/) |
 
 ---
 
@@ -56,13 +65,16 @@ python -c "import keyring; keyring.set_password('com.twizzy.agent', 'kimi_api_ke
 
 ---
 
-## 📋 Where to Get Your API Key
+## 📋 Where to Get Your Kimi Code API Key
 
-1. Go to [https://platform.moonshot.ai/](https://platform.moonshot.ai/)
-2. Sign up or log in
-3. Go to "API Keys" section
-4. Create a new key
-5. Copy the key (starts with `sk-`)
+1. Go to [https://www.kimi.com/code](https://www.kimi.com/code)
+2. Sign in to your account
+3. Click **Settings** (gear icon)
+4. Go to **API Keys** section
+5. Create a new API key
+6. Copy the key
+
+**Alternative:** Use Moonshot Open Platform at [platform.moonshot.ai](https://platform.moonshot.ai/)
 
 ---
 
