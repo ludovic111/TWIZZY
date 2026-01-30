@@ -6,10 +6,10 @@
     <key>Label</key>
     <string>com.twizzy.agent</string>
 
-    <!-- Command to run -->
+    <!-- Command to run (uses venv Python) -->
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/bin/python3</string>
+        <string>/Users/USER/Desktop/TWIZZY/.venv/bin/python</string>
         <string>-m</string>
         <string>src.daemon.main</string>
     </array>

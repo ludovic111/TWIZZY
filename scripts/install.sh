@@ -48,11 +48,16 @@ echo -e "${YELLOW}Creating TWIZZY home directory...${NC}"
 mkdir -p "$TWIZZY_HOME/logs"
 echo "Created $TWIZZY_HOME"
 
-# Install Python dependencies
-echo -e "${YELLOW}Installing Python dependencies...${NC}"
+# Create virtual environment and install dependencies
+echo -e "${YELLOW}Creating virtual environment...${NC}"
 cd "$PROJECT_DIR"
-python3 -m pip install -e . --quiet
-echo "Dependencies installed"
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e . --quiet
+echo "Virtual environment created and dependencies installed"
+echo ""
+echo -e "${GREEN}To activate the environment, run:${NC}"
+echo "  source $PROJECT_DIR/.venv/bin/activate"
 
 # Setup launchd agent
 echo -e "${YELLOW}Setting up launchd agent...${NC}"
