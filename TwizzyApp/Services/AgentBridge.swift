@@ -139,8 +139,13 @@ actor AgentBridge {
         let encoder = JSONEncoder()
         let data = try encoder.encode(permissions)
         let dict = try JSONSerialization.jsonObject(with: data) as! [String: Any]
-        let _: [String: Any] = try await call(method: "set_permissions", params: ["permissions": dict])
+        let _: SetPermissionsResponse = try await call(method: "set_permissions", params: ["permissions": dict])
     }
+}
+
+struct SetPermissionsResponse: Decodable {
+    let success: Bool
+    let error: String?
 }
 
 enum BridgeError: LocalizedError {
